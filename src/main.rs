@@ -61,101 +61,29 @@ impl Board {
   }
 
   fn slide_down(&mut self) {
-    let mut col = 0;
-    for _ in 0..4 {
-      let mut merge_val = (self.0 >> col) & 0xf;
-      let mut dest_pos = if merge_val == 0 { col - 16 } else { col };
-
-      let mut pos = col;
-      for _ in 1..4 {
-        pos += 16;
-        let val = (self.0 >> pos) & 0xf;
-
-        if val == 0 {
-          // do nothing
-        } else if val == merge_val {
-          self.0 += 1 << dest_pos;
-          self.0 &= !(0xf << pos);
-          merge_val = 0;
-        } else {
-          dest_pos += 16;
-          merge_val = val;
-          self.0 &= !(0xf << pos);
-          self.0 |= val << dest_pos;
-        }
-      }
-
-      col += 4;
-    }
+    self.do_slide(0, 4, 16);
   }
 
   fn slide_up(&mut self) {
-    let mut col = 16*3;
-    for _ in 0..4 {
-      let mut merge_val = (self.0 >> col) & 0xf;
-      let mut dest_pos = if merge_val == 0 { col + 16 } else { col };
-
-      let mut pos = col;
-      for _ in 1..4 {
-        pos -= 16;
-        let val = (self.0 >> pos) & 0xf;
-
-        if val == 0 {
-          // do nothing
-        } else if val == merge_val {
-          self.0 += 1 << dest_pos;
-          self.0 &= !(0xf << pos);
-          merge_val = 0;
-        } else {
-          dest_pos -= 16;
-          merge_val = val;
-          self.0 &= !(0xf << pos);
-          self.0 |= val << dest_pos;
-        }
-      }
-
-      col += 4;
-    }
+    self.do_slide(16*3, 4, -16);
   }
 
   fn slide_right(&mut self) {
-    let mut row = 0;
-    for _ in 0..4 {
-      let mut merge_val = (self.0 >> row) & 0xf;
-      let mut dest_pos = if merge_val == 0 { row - 4 } else { row };
-
-      let mut pos = row;
-      for _ in 1..4 {
-        pos += 4;
-        let val = (self.0 >> pos) & 0xf;
-
-        if val == 0 {
-          // do nothing
-        } else if val == merge_val {
-          self.0 += 1 << dest_pos;
-          self.0 &= !(0xf << pos);
-          merge_val = 0;
-        } else {
-          dest_pos += 4;
-          merge_val = val;
-          self.0 &= !(0xf << pos);
-          self.0 |= val << dest_pos;
-        }
-      }
-
-      row += 16;
-    }
+    self.do_slide(0, 16, 4);
   }
 
   fn slide_left(&mut self) {
-    let mut row = 4*3;
-    for _ in 0..4 {
-      let mut merge_val = (self.0 >> row) & 0xf;
-      let mut dest_pos = if merge_val == 0 { row + 4 } else { row };
+    self.do_slide(4*3, 16, -4);
+  }
 
-      let mut pos = row;
+  fn do_slide(&mut self, start: i32, sec_move: i32, step_move: i32) {
+    let mut sec = start;
+    for _ in 0..4 {
+      let mut merge_val = (self.0 >> sec) & 0xf;
+      let mut dest_pos = if merge_val == 0 { sec - step_move } else { sec };
+      let mut pos = sec;
       for _ in 1..4 {
-        pos -= 4;
+        pos += step_move;
         let val = (self.0 >> pos) & 0xf;
 
         if val == 0 {
@@ -165,16 +93,17 @@ impl Board {
           self.0 &= !(0xf << pos);
           merge_val = 0;
         } else {
-          dest_pos -= 4;
+          dest_pos += step_move;
           merge_val = val;
           self.0 &= !(0xf << pos);
           self.0 |= val << dest_pos;
         }
       }
 
-      row += 16;
+      sec += sec_move;
     }
   }
+
 }
 
 fn main() {
