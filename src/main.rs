@@ -5,10 +5,12 @@ extern crate getch;
 struct Board(u64);
 
 impl Board {
-  fn print(self) {
+  fn print_spacing() {
+    for _ in 0..12 { println!(); }
+  }
+  fn print(self, fours: i32) {
     let nums = ["   ", "  2", "  4", "  8", " 16", " 32", " 64", "128", "256", "512", " 1K", " 2K", " 4K", " 8K", "16K", "32K"];
-    //print!("+---+---+---+---+\n");
-    print!("\x1b[9A+---+---+---+---+\n");
+    print!("\x1b[10A+---+---+---+---+\n");
     for n in 0..16 {
       let v = (self.0 >> ((15-n) * 4)) & 0xf;
       print!("|{}", nums[v as usize]);
@@ -16,6 +18,7 @@ impl Board {
         print!("|\n+---+---+---+---+\n");
       }
     }
+    println!("Score: {}      ", self.game_score(fours));
   }
 
   fn empty(self) -> i32 {
@@ -40,11 +43,7 @@ impl Board {
     n2 as i32
   }
 
-  fn print_spacing() {
-    for _ in 0..11 { println!(); }
-  }
-
-  fn comp_move(&mut self) {
+  fn comp_move(&mut self) -> i32 {
     // self.empty() can't handle the completely-empty case.
     assert!(self.0 == 0 || self.empty() > 0);
     let size = if self.0 == 0 { 16 } else { self.empty() };
@@ -57,7 +56,9 @@ impl Board {
         n -= 1;
       }
     }
-    self.0 |= if rand::random::<f32>() < 0.9 { 1 } else { 2 } << (pos * 4);
+    let four = rand::random::<f32>() < 0.1;
+    self.0 |= if four { 2 } else { 1 } << (pos * 4);
+    if four { 1 } else { 0 }
   }
 
   fn slide_down(&mut self) {
@@ -104,6 +105,33 @@ impl Board {
     }
   }
 
+  fn game_score(self, fours: i32) -> i32 {
+    let mut score: i32 = 0;
+    for pos in 0..16 {
+      let val = ((self.0 >> (pos*4)) & 0xf) as i32;
+      if val >= 2 {
+        score += (val - 1) * (1 << val);
+      }
+    }
+    score - (fours * 4)
+  }
+
+  fn transpose(self) -> Board {
+    // 0123      048c      0 3 6 9
+    // 4567  ->  159d  =  -3 0 3 6
+    // 89ab      26ae     -6-3 0 3
+    // cdef      37bf     -9-6-3 0
+
+    let a1 = self.0 & 0xf0f0_0f0f_f0f0_0f0f_u64;
+    let a2 = self.0 & 0x0000_f0f0_0000_f0f0_u64;
+    let a3 = self.0 & 0x0f0f_0000_0f0f_0000_u64;
+    let a = a1 | (a2 << 12) | (a3 >> 12);
+    let b1 = a & 0xff00_ff00_00ff_00ff_u64;
+    let b2 = a & 0x00ff_00ff_0000_0000_u64;
+    let b3 = a & 0x0000_0000_ff00_ff00_u64;
+    Board(b1 | (b2 >> 24) | (b3 << 24))
+  }
+
 }
 
 fn main() {
@@ -114,13 +142,16 @@ fn main() {
 
 fn play_manual() -> std::result::Result<(), std::io::Error> {
   let mut board = Board(0);
-  board.comp_move();
-  board.comp_move();
-  board.print();
+
+  let mut fours = 0;
+  fours += board.comp_move();
+  fours += board.comp_move();
 
   let io = getch::Getch::new()?;
 
   loop {
+    board.print(fours);
+
     let mut new_board = board;
     match io.getch()? as char {
       'q' => break,
@@ -128,6 +159,7 @@ fn play_manual() -> std::result::Result<(), std::io::Error> {
       's' => new_board.slide_down(),
       'd' => new_board.slide_right(),
       'a' => new_board.slide_left(),
+      't' => { board = new_board.transpose(); continue },
       _ => (),
     }
 
@@ -136,8 +168,7 @@ fn play_manual() -> std::result::Result<(), std::io::Error> {
     }
 
     board = new_board;
-    board.comp_move();
-    board.print();
+    fours += board.comp_move();
   }
 
   Ok(())
