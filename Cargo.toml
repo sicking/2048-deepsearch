@@ -1,0 +1,8 @@
+[package]
+name = "p2048"
+version = "0.1.0"
+authors = ["Jonas Sicking <jonas@sicking.cc>"]
+
+[dependencies]
+rand = "0.3"
+getch = "0.1.1"
