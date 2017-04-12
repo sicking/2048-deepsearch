@@ -6,11 +6,11 @@ struct Board(u64);
 
 impl Board {
   fn print_spacing() {
-    for _ in 0..13 { println!(); }
+    for _ in 0..10 { println!(); }
   }
   fn print(self, fours: i32) {
     let nums = ["   ", "  2", "  4", "  8", " 16", " 32", " 64", "128", "256", "512", " 1K", " 2K", " 4K", " 8K", "16K", "32K"];
-    print!("\x1b[11A+---+---+---+---+\n");
+    print!("\x1b[10A+---+---+---+---+\n");
     for n in 0..16 {
       print!("|{}", nums[self.get_tile(15-n) as usize]);
       if (n % 4) == 3 {
@@ -18,11 +18,9 @@ impl Board {
       }
     }
     println!("Score: {}      ", self.game_score(fours));
-    println!("Heur: {}          ", self.score());
   }
 
   fn empty(self) -> i32 {
-    #[cfg(debug_assertions)]
     fn empty_debug(board: Board) -> i32 {
       let mut empty = 0;
       for i in 0..16 {
@@ -34,31 +32,31 @@ impl Board {
     }
 
     // Below can't handle this case.
-    assert_ne!(self.0, 0);
+    debug_assert_ne!(self.0, 0);
 
     let b = !(self.0 | (self.0 >> 1) | (self.0 >> 2) | (self.0 >> 3)) & 0x1111_1111_1111_1111u64;
     let n1 = b + (b >> 16) + (b >> 32) + (b >> 48);
     let n2 = (n1 + (n1 >> 4) + (n1 >> 8) + (n1 >> 12)) & 0xf;
-    assert!((n2 as i32) == empty_debug(self));
+    debug_assert!((n2 as i32) == empty_debug(self));
     n2 as i32
   }
 
   fn get_tile(self, tile: i32) -> i32 {
-    assert!(tile >= 0 && tile < 16);
+    debug_assert!(tile >= 0 && tile < 16);
     ((self.0 >> (tile * 4)) & 0xf) as i32
   }
 
   fn set_tile(&mut self, tile: i32, val: i32) {
-    assert_eq!(self.get_tile(tile), 0);
+    debug_assert_eq!(self.get_tile(tile), 0);
     self.0 |= (val as u64) << (tile * 4);
   }
 
   fn comp_move(&mut self) -> i32 {
     // self.empty() can't handle the completely-empty case.
-    assert!(self.0 == 0 || self.empty() > 0);
+    debug_assert!(self.0 == 0 || self.empty() > 0);
     let size = if self.0 == 0 { 16 } else { self.empty() };
     let mut n = (rand::random::<f32>() * (size as f32)).floor() as i32;
-    assert!(self.0 == 0 || n < self.empty());
+    debug_assert!(self.0 == 0 || n < self.empty());
     let mut pos = -1;
     while n >= 0 {
       pos += 1;
@@ -174,7 +172,7 @@ fn ai_comp_move(board: Board, depth: i32) -> f32 {
   }
 
   let empty = board.empty();
-  assert!(empty != 0);
+  debug_assert!(empty != 0);
   let mut score = 0f32;
   for tile in 0..16 {
     if board.get_tile(tile) == 0 {
