@@ -6,27 +6,27 @@ struct Board(u64);
 
 impl Board {
   fn print_spacing() {
-    for _ in 0..12 { println!(); }
+    for _ in 0..13 { println!(); }
   }
   fn print(self, fours: i32) {
     let nums = ["   ", "  2", "  4", "  8", " 16", " 32", " 64", "128", "256", "512", " 1K", " 2K", " 4K", " 8K", "16K", "32K"];
-    print!("\x1b[10A+---+---+---+---+\n");
+    print!("\x1b[11A+---+---+---+---+\n");
     for n in 0..16 {
-      let v = (self.0 >> ((15-n) * 4)) & 0xf;
-      print!("|{}", nums[v as usize]);
+      print!("|{}", nums[self.get_tile(15-n) as usize]);
       if (n % 4) == 3 {
         print!("|\n+---+---+---+---+\n");
       }
     }
     println!("Score: {}      ", self.game_score(fours));
+    println!("Heur: {}          ", self.score());
   }
 
   fn empty(self) -> i32 {
     #[cfg(debug_assertions)]
-    fn empty_debug(num: u64) -> i32 {
+    fn empty_debug(board: Board) -> i32 {
       let mut empty = 0;
       for i in 0..16 {
-        if (num >> (i * 4)) & 0xf == 0 {
+        if board.get_tile(i) == 0 {
           empty += 1;
         }
       }
@@ -39,8 +39,18 @@ impl Board {
     let b = !(self.0 | (self.0 >> 1) | (self.0 >> 2) | (self.0 >> 3)) & 0x1111_1111_1111_1111u64;
     let n1 = b + (b >> 16) + (b >> 32) + (b >> 48);
     let n2 = (n1 + (n1 >> 4) + (n1 >> 8) + (n1 >> 12)) & 0xf;
-    assert!((n2 as i32) == empty_debug(self.0) || n2 == 0);
+    assert!((n2 as i32) == empty_debug(self));
     n2 as i32
+  }
+
+  fn get_tile(self, tile: i32) -> i32 {
+    assert!(tile >= 0 && tile < 16);
+    ((self.0 >> (tile * 4)) & 0xf) as i32
+  }
+
+  fn set_tile(&mut self, tile: i32, val: i32) {
+    assert_eq!(self.get_tile(tile), 0);
+    self.0 |= (val as u64) << (tile * 4);
   }
 
   fn comp_move(&mut self) -> i32 {
@@ -52,13 +62,23 @@ impl Board {
     let mut pos = -1;
     while n >= 0 {
       pos += 1;
-      if (self.0 >> (pos * 4)) & 0xf == 0 {
+      if self.get_tile(pos) == 0 {
         n -= 1;
       }
     }
     let four = rand::random::<f32>() < 0.1;
-    self.0 |= if four { 2 } else { 1 } << (pos * 4);
+    self.set_tile(pos, if four { 2 } else { 1 });
     if four { 1 } else { 0 }
+  }
+
+  fn slide(&mut self, dir: i32) {
+    match dir {
+      0 => self.slide_right(),
+      1 => self.slide_down(),
+      2 => self.slide_left(),
+      3 => self.slide_up(),
+      _ => panic!("unknown direction"),
+    }
   }
 
   fn slide_down(&mut self) {
@@ -132,12 +152,156 @@ impl Board {
     Board(b1 | (b2 >> 24) | (b3 << 24))
   }
 
+  fn score(self) -> f32 {
+    let trans = self.transpose();
+    unsafe {
+      SCORE_TABLE[((self.0 >> 0) & 0xffff) as usize] +
+      SCORE_TABLE[((self.0 >> 16) & 0xffff) as usize] +
+      SCORE_TABLE[((self.0 >> 32) & 0xffff) as usize] +
+      SCORE_TABLE[((self.0 >> 48) & 0xffff) as usize] +
+      SCORE_TABLE[((trans.0 >> 0) & 0xffff) as usize] +
+      SCORE_TABLE[((trans.0 >> 16) & 0xffff) as usize] +
+      SCORE_TABLE[((trans.0 >> 32) & 0xffff) as usize] +
+      SCORE_TABLE[((trans.0 >> 48) & 0xffff) as usize]
+    }
+  }
+
 }
 
-fn main() {
-  Board::print_spacing();
+fn ai_comp_move(board: Board, depth: i32) -> f32 {
+  if depth <= 0 {
+    return board.score();
+  }
 
-  play_manual().unwrap();
+  let empty = board.empty();
+  assert!(empty != 0);
+  let mut score = 0f32;
+  for tile in 0..16 {
+    if board.get_tile(tile) == 0 {
+      let mut new_board = board;
+      new_board.set_tile(tile, 1);
+      score += ai_player_move(new_board, depth) * 0.9f32;
+      new_board = board;
+      new_board.set_tile(tile, 2);
+      score += ai_player_move(new_board, depth) * 0.1f32;
+    }
+  }
+
+  score / (empty as f32)
+}
+
+fn ai_player_move(board: Board, depth: i32)  -> f32 {
+  let mut score = 0f32;
+
+  for dir in 0..4 {
+    let mut new_board = board;
+    new_board.slide(dir);
+    if new_board == board {
+      continue;
+    }
+
+    let move_score = ai_comp_move(new_board, depth - 1);
+    if move_score > score {
+      score = move_score;
+    }
+  }
+
+  score
+}
+
+const SCORE_LOST_PENALTY : f32 = 200000.0f32;
+const SCORE_MONOTONICITY_POWER : f32 = 4.0f32;
+const SCORE_MONOTONICITY_WEIGHT : f32 = 47.0f32;
+const SCORE_SUM_POWER : f32 = 3.5f32;
+const SCORE_SUM_WEIGHT : f32 = 11.0f32;
+const SCORE_MERGES_WEIGHT : f32 = 700.0f32;
+const SCORE_EMPTY_WEIGHT : f32 = 270.0f32;
+
+static mut SCORE_TABLE : [f32; 65536] = [0f32; 65536];
+
+fn init_score_table() {
+  for n in 0..65536 {
+    let vals = [(n >> 0) & 0xf,
+                (n >> 4) & 0xf,
+                (n >> 8) & 0xf,
+                (n >> 12) & 0xf];
+
+    let mut sum = 0f32;
+    let mut empty = 0;
+    let mut merges = 0;
+    let mut counter = 0;
+    let mut prev = 0;
+    for rank in vals.iter() {
+      sum += (*rank as f32).powf(SCORE_SUM_POWER);
+      if *rank == 0 {
+        empty += 1;
+      } else {
+        if prev == *rank {
+          counter += 1;
+        } else if counter > 0 {
+          merges += 1 + counter;
+          counter = 0;
+        }
+        prev = *rank;
+      }
+    }
+    if counter > 0 {
+      merges += 1 + counter;
+    }
+
+    let mut monotonicity_left = 0f32;
+    let mut monotonicity_right = 0f32;
+    for j in 1..4 {
+      let i = j as usize;
+      if vals[i-1] > vals[i] {
+        monotonicity_left += (vals[i-1] as f32).powf(SCORE_MONOTONICITY_POWER) - (vals[i] as f32).powf(SCORE_MONOTONICITY_POWER);
+      } else {
+        monotonicity_right += (vals[i] as f32).powf(SCORE_MONOTONICITY_POWER) - (vals[i-1] as f32).powf(SCORE_MONOTONICITY_POWER);
+      }
+    }
+
+    let score = SCORE_LOST_PENALTY +
+                SCORE_EMPTY_WEIGHT * (empty as f32) +
+                SCORE_MERGES_WEIGHT * (merges as f32) -
+                SCORE_MONOTONICITY_WEIGHT * if monotonicity_left < monotonicity_right { monotonicity_left } else { monotonicity_right } -
+                SCORE_SUM_WEIGHT * sum;
+    unsafe { SCORE_TABLE[n] = score; }
+  }
+}
+
+fn ai_play() {
+  let mut board = Board(0);
+  let mut fours = 0;
+  fours += board.comp_move();
+  fours += board.comp_move();
+
+  loop {
+    board.print(fours);
+
+    let mut bestexp = 0f32;
+    let mut bestdir = -1;
+
+    for dir in 0..4 {
+      let mut new_board = board;
+      new_board.slide(dir);
+      if new_board == board {
+        continue;
+      }
+
+      let exp = ai_comp_move(new_board, 2);
+      if exp > bestexp {
+        bestexp = exp;
+        bestdir = dir;
+      }
+    }
+
+    if bestdir == -1 {
+      return
+    }
+
+    board.slide(bestdir);
+    fours += board.comp_move();
+  }
 }
 
 fn play_manual() -> std::result::Result<(), std::io::Error> {
@@ -172,4 +336,13 @@ fn play_manual() -> std::result::Result<(), std::io::Error> {
   }
 
   Ok(())
+}
+
+fn main() {
+  init_score_table();
+
+  Board::print_spacing();
+
+  //play_manual().unwrap();
+  ai_play();
 }
