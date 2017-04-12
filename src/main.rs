@@ -304,6 +304,7 @@ fn ai_play() {
   }
 }
 
+#[allow(dead_code)]
 fn play_manual() -> std::result::Result<(), std::io::Error> {
   let mut board = Board(0);
 
@@ -343,6 +344,5 @@ fn main() {
 
   Board::print_spacing();
 
-  //play_manual().unwrap();
   ai_play();
 }
