@@ -1,10 +1,14 @@
 extern crate rand;
 extern crate getch;
 
+use rand::{Rng, StdRng};
+use std::time::Instant;
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 struct Board(u64);
 
 impl Board {
+  #[allow(dead_code)]
   fn print_spacing() {
     for _ in 0..10 { println!(); }
   }
@@ -51,11 +55,11 @@ impl Board {
     self.0 |= (val as u64) << (tile * 4);
   }
 
-  fn comp_move(&mut self) -> i32 {
+  fn comp_move(&mut self, rng: &mut Rng) -> i32 {
     // self.empty() can't handle the completely-empty case.
     debug_assert!(self.0 == 0 || self.empty() > 0);
     let size = if self.0 == 0 { 16 } else { self.empty() };
-    let mut n = (rand::random::<f32>() * (size as f32)).floor() as i32;
+    let mut n = (rng.next_f32() * (size as f32)).floor() as i32;
     debug_assert!(self.0 == 0 || n < self.empty());
     let mut pos = -1;
     while n >= 0 {
@@ -64,7 +68,7 @@ impl Board {
         n -= 1;
       }
     }
-    let four = rand::random::<f32>() < 0.1;
+    let four = rng.next_f32() < 0.1;
     self.set_tile(pos, if four { 2 } else { 1 });
     if four { 1 } else { 0 }
   }
@@ -267,14 +271,17 @@ fn init_score_table() {
   }
 }
 
-fn ai_play() {
+fn ai_play(rng: &mut Rng, print: bool) -> i32 {
+
   let mut board = Board(0);
   let mut fours = 0;
-  fours += board.comp_move();
-  fours += board.comp_move();
+  fours += board.comp_move(rng);
+  fours += board.comp_move(rng);
 
   loop {
-    board.print(fours);
+    if print {
+      board.print(fours);
+    }
 
     let mut bestexp = 0f32;
     let mut bestdir = -1;
@@ -294,21 +301,26 @@ fn ai_play() {
     }
 
     if bestdir == -1 {
-      return
+      return board.game_score(fours);
     }
 
     board.slide(bestdir);
-    fours += board.comp_move();
+    fours += board.comp_move(rng);
   }
 }
 
+
 #[allow(dead_code)]
 fn play_manual() -> std::result::Result<(), std::io::Error> {
+  Board::print_spacing();
+
   let mut board = Board(0);
 
+  let mut rng : rand::ThreadRng = rand::thread_rng();
+
   let mut fours = 0;
-  fours += board.comp_move();
-  fours += board.comp_move();
+  fours += board.comp_move(&mut rng);
+  fours += board.comp_move(&mut rng);
 
   let io = getch::Getch::new()?;
 
@@ -331,16 +343,37 @@ fn play_manual() -> std::result::Result<(), std::io::Error> {
     }
 
     board = new_board;
-    fours += board.comp_move();
+    fours += board.comp_move(&mut rng);
   }
 
   Ok(())
 }
 
+
+#[allow(dead_code)]
+fn ai_play_multi_games() {
+  let seed: &[_] = &[1, 2, 3, 4, 5];
+  let mut rng: StdRng = rand::SeedableRng::from_seed(seed);
+  //let mut rng : rand::ThreadRng = rand::thread_rng();
+
+  let now = Instant::now();
+  let n = 10;
+  let mut tot_score = 0;
+  for _ in 0..n {
+    let score = ai_play(&mut rng, false);
+    tot_score += score;
+    println!("Score: {}", score);
+  }
+
+  let elapsed = now.elapsed();
+
+  println!("Average score: {}, time: {}", (tot_score as f32) / (n as f32),
+             elapsed.as_secs() as f64 + (elapsed.subsec_nanos() as f64) / 1_000_000_000f64);  
+}
+
+
 fn main() {
   init_score_table();
 
-  Board::print_spacing();
-
-  ai_play();
+  ai_play_multi_games();
 }
