@@ -3,8 +3,9 @@ extern crate getch;
 
 use rand::{Rng, StdRng};
 use std::time::Instant;
+use std::collections::HashMap;
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 struct Board(u64);
 
 impl Board {
@@ -158,9 +159,16 @@ impl Board {
 
 }
 
-fn ai_comp_move(board: Board, depth: i32) -> f32 {
+fn ai_comp_move(board: Board, depth: i32, hash: &mut HashMap<Board, (i32, f32)>) -> f32 {
   if depth <= 0 {
     return board.score();
+  }
+
+  if let Some(entry) = hash.get(&board) {
+    let (hash_depth, score) = *entry;
+    if hash_depth >= depth {
+      return score;
+    }
   }
 
   let empty = board.empty();
@@ -168,15 +176,19 @@ fn ai_comp_move(board: Board, depth: i32) -> f32 {
   let mut score = 0f32;
   for tile in 0..16 {
     if board.get_tile(tile) == 0 {
-      score += ai_player_move(board.set_tile(tile, 1), depth) * 0.9f32;
-      score += ai_player_move(board.set_tile(tile, 2), depth) * 0.1f32;
+      score += ai_player_move(board.set_tile(tile, 1), depth, hash) * 0.9f32;
+      score += ai_player_move(board.set_tile(tile, 2), depth, hash) * 0.1f32;
     }
   }
 
-  score / (empty as f32)
+  score /= empty as f32;
+
+  hash.insert(board, (depth, score));
+
+  score
 }
 
-fn ai_player_move(board: Board, depth: i32)  -> f32 {
+fn ai_player_move(board: Board, depth: i32, hash: &mut HashMap<Board, (i32, f32)>)  -> f32 {
   let mut score = 0f32;
 
   for dir in 0..4 {
@@ -185,7 +197,7 @@ fn ai_player_move(board: Board, depth: i32)  -> f32 {
       continue;
     }
 
-    let move_score = ai_comp_move(new_board, depth - 1);
+    let move_score = ai_comp_move(new_board, depth - 1, hash);
     if move_score > score {
       score = move_score;
     }
@@ -294,6 +306,8 @@ fn ai_play(rng: &mut Rng, print: bool) -> i32 {
     Board::print_spacing();
   }
 
+  let mut hash = HashMap::new();
+
   loop {
     if print {
       board.print(fours);
@@ -301,6 +315,7 @@ fn ai_play(rng: &mut Rng, print: bool) -> i32 {
 
     let mut bestexp = 0f32;
     let mut bestdir = -1;
+    hash.clear();
 
     for dir in 0..4 {
       let new_board = board.slide(dir);
@@ -308,7 +323,7 @@ fn ai_play(rng: &mut Rng, print: bool) -> i32 {
         continue;
       }
 
-      let exp = ai_comp_move(new_board, 2);
+      let exp = ai_comp_move(new_board, 2, &mut hash);
       if exp > bestexp {
         bestexp = exp;
         bestdir = dir;
