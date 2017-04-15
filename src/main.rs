@@ -73,7 +73,7 @@ impl Board {
     if four { 1 } else { 0 }
   }
 
-  fn slide(&mut self, dir: i32) {
+  fn slide(self, dir: i32) -> Board {
     match dir {
       0 => self.slide_right(),
       1 => self.slide_down(),
@@ -83,48 +83,43 @@ impl Board {
     }
   }
 
-  fn slide_down(&mut self) {
-    self.do_slide(0, 4, 16);
+  fn slide_down(self) -> Board {
+    let t = self.transpose();
+    Board(unsafe {
+      (SLIDE_TABLE[((t.0 >> 0) & 0xffff) as usize] as u64) << 0 |
+      (SLIDE_TABLE[((t.0 >> 16) & 0xffff) as usize] as u64) << 16 |
+      (SLIDE_TABLE[((t.0 >> 32) & 0xffff) as usize] as u64) << 32 |
+      (SLIDE_TABLE[((t.0 >> 48) & 0xffff) as usize] as u64) << 48
+      }).transpose()
   }
 
-  fn slide_up(&mut self) {
-    self.do_slide(16*3, 4, -16);
+  fn slide_up(self) -> Board {
+    let t = self.transpose2();
+    Board(unsafe {
+      (SLIDE_TABLE[((t.0 >> 0) & 0xffff) as usize] as u64) << 0 |
+      (SLIDE_TABLE[((t.0 >> 16) & 0xffff) as usize] as u64) << 16 |
+      (SLIDE_TABLE[((t.0 >> 32) & 0xffff) as usize] as u64) << 32 |
+      (SLIDE_TABLE[((t.0 >> 48) & 0xffff) as usize] as u64) << 48
+      }).transpose2()
   }
 
-  fn slide_right(&mut self) {
-    self.do_slide(0, 16, 4);
+  fn slide_right(self) -> Board {
+    Board(unsafe {
+      (SLIDE_TABLE[((self.0 >> 0) & 0xffff) as usize] as u64) << 0 |
+      (SLIDE_TABLE[((self.0 >> 16) & 0xffff) as usize] as u64) << 16 |
+      (SLIDE_TABLE[((self.0 >> 32) & 0xffff) as usize] as u64) << 32 |
+      (SLIDE_TABLE[((self.0 >> 48) & 0xffff) as usize] as u64) << 48
+      })
   }
 
-  fn slide_left(&mut self) {
-    self.do_slide(4*3, 16, -4);
-  }
-
-  fn do_slide(&mut self, start: i32, sec_move: i32, step_move: i32) {
-    let mut sec = start;
-    for _ in 0..4 {
-      let mut merge_val = (self.0 >> sec) & 0xf;
-      let mut dest_pos = if merge_val == 0 { sec - step_move } else { sec };
-      let mut pos = sec;
-      for _ in 1..4 {
-        pos += step_move;
-        let val = (self.0 >> pos) & 0xf;
-
-        if val == 0 {
-          // do nothing
-        } else if val == merge_val {
-          self.0 += 1 << dest_pos;
-          self.0 &= !(0xf << pos);
-          merge_val = 0;
-        } else {
-          dest_pos += step_move;
-          merge_val = val;
-          self.0 &= !(0xf << pos);
-          self.0 |= val << dest_pos;
-        }
-      }
-
-      sec += sec_move;
-    }
+  fn slide_left(self) -> Board {
+    let t = self.horiz_flip();
+    Board(unsafe {
+      (SLIDE_TABLE[((t.0 >> 0) & 0xffff) as usize] as u64) << 0 |
+      (SLIDE_TABLE[((t.0 >> 16) & 0xffff) as usize] as u64) << 16 |
+      (SLIDE_TABLE[((t.0 >> 32) & 0xffff) as usize] as u64) << 32 |
+      (SLIDE_TABLE[((t.0 >> 48) & 0xffff) as usize] as u64) << 48
+      }).horiz_flip()
   }
 
   fn game_score(self, fours: i32) -> i32 {
@@ -144,15 +139,70 @@ impl Board {
     // 89ab      26ae     -6-3 0 3
     // cdef      37bf     -9-6-3 0
 
+
+    //  0 0 6 6
+    //  0 0 6 6
+    // -6-6 0 0
+    // -6-6 0 0
+
     let a1 = self.0 & 0xf0f0_0f0f_f0f0_0f0f_u64;
+    //                  0_2_ _5_7 8_a_ _d_f
     let a2 = self.0 & 0x0000_f0f0_0000_f0f0_u64;
+    //                  ____ 4_6_ ____ c_e_
     let a3 = self.0 & 0x0f0f_0000_0f0f_0000_u64;
+    //                  _1_3 ____ _9_b ____
     let a = a1 | (a2 << 12) | (a3 >> 12);
-    let b1 = a & 0xff00_ff00_00ff_00ff_u64;
-    let b2 = a & 0x00ff_00ff_0000_0000_u64;
-    let b3 = a & 0x0000_0000_ff00_ff00_u64;
+    //                  0426 1537 8cae 9dbf
+
+    let b1 = a      & 0xff00_ff00_00ff_00ff_u64;
+    //                  04__ 15__ __ae __bf
+    let b2 = a      & 0x00ff_00ff_0000_0000_u64;
+    //                  __26 __37 ____ ____
+    let b3 = a      & 0x0000_0000_ff00_ff00_u64;
+    //                  ____ ____ 8c__ 9d__
+
     Board(b1 | (b2 >> 24) | (b3 << 24))
+    //                  048c 159d 26ae 37bf
   }
+
+  fn transpose2(self) -> Board {
+    // 0123      fb73      15 10   5   0
+    // 4567  ->  ea62   =  10  5   0  -5
+    // 89ab      d951       5  0  -5 -10
+    // cdef      c840       0 -5 -10 -15
+
+    // 10 10   0    0
+    // 10 10   0    0
+    //  0  0  -10 -10
+    //  0  0  -10 -10
+
+
+    let a1 = self.0 & 0x0f0f_f0f0_0f0f_f0f0_u64;
+    let a2 = self.0 & 0x0000_0f0f_0000_0f0f_u64;
+    let a3 = self.0 & 0xf0f0_0000_f0f0_0000_u64;
+    let a = a1 | (a2 << 20) | (a3 >> 20);
+
+    let b1 = a      & 0x00ff_00ff_ff00_ff00_u64;
+    let b2 = a      & 0xff00_ff00_0000_0000_u64;
+    let b3 = a      & 0x0000_0000_00ff_00ff_u64;
+
+    Board(b1 | (b2 >> 40) | (b3 << 40))
+  }
+
+  fn horiz_flip(self) -> Board {
+    // 0123      3210      3  1 -1 -3
+    // 4567  ->  7654   =  3  1 -1 -3
+    // 89ab      ba98      3  1 -1 -3
+    // cdef      fedc      3  1 -1 -3
+
+    let a1 = self.0 & 0xf000_f000_f000_f000_u64;
+    let a2 = self.0 & 0x0f00_0f00_0f00_0f00_u64;
+    let a3 = self.0 & 0x00f0_00f0_00f0_00f0_u64;
+    let a4 = self.0 & 0x000f_000f_000f_000f_u64;
+
+    Board(a1 >> 12 | a2 >> 4 | a3 << 4 | a4 << 12)
+  }
+
 
   fn score(self) -> f32 {
     let trans = self.transpose();
@@ -196,8 +246,7 @@ fn ai_player_move(board: Board, depth: i32)  -> f32 {
   let mut score = 0f32;
 
   for dir in 0..4 {
-    let mut new_board = board;
-    new_board.slide(dir);
+    let new_board = board.slide(dir);
     if new_board == board {
       continue;
     }
@@ -220,6 +269,7 @@ const SCORE_MERGES_WEIGHT : f32 = 700.0f32;
 const SCORE_EMPTY_WEIGHT : f32 = 270.0f32;
 
 static mut SCORE_TABLE : [f32; 65536] = [0f32; 65536];
+static mut SLIDE_TABLE : [u16; 65536] = [0u16; 65536];
 
 fn init_score_table() {
   for n in 0..65536 {
@@ -268,6 +318,26 @@ fn init_score_table() {
                 SCORE_MONOTONICITY_WEIGHT * if monotonicity_left < monotonicity_right { monotonicity_left } else { monotonicity_right } -
                 SCORE_SUM_WEIGHT * sum;
     unsafe { SCORE_TABLE[n] = score; }
+
+    let mut res = vals[0] as u16;
+    let mut merge_val = vals[0];
+    let mut dest_pos = if merge_val == 0 { -4 } else { 0 };
+    for pos in 1..4 {
+      let val = vals[pos as usize];
+
+      if val == 0 {
+        // do nothing
+      } else if val == merge_val {
+        res += (1 as u16) << dest_pos;
+        merge_val = 0;
+      } else {
+        dest_pos += 4;
+        merge_val = val;
+        res |= (val as u16) << dest_pos;
+      }
+    }
+    unsafe { SLIDE_TABLE[n] = res; }
+
   }
 }
 
@@ -287,8 +357,7 @@ fn ai_play(rng: &mut Rng, print: bool) -> i32 {
     let mut bestdir = -1;
 
     for dir in 0..4 {
-      let mut new_board = board;
-      new_board.slide(dir);
+      let new_board = board.slide(dir);
       if new_board == board {
         continue;
       }
@@ -304,7 +373,7 @@ fn ai_play(rng: &mut Rng, print: bool) -> i32 {
       return board.game_score(fours);
     }
 
-    board.slide(bestdir);
+    board = board.slide(bestdir);
     fours += board.comp_move(rng);
   }
 }
@@ -327,15 +396,17 @@ fn play_manual() -> std::result::Result<(), std::io::Error> {
   loop {
     board.print(fours);
 
-    let mut new_board = board;
+    let new_board;
     match io.getch()? as char {
       'q' => break,
-      'w' => new_board.slide_up(),
-      's' => new_board.slide_down(),
-      'd' => new_board.slide_right(),
-      'a' => new_board.slide_left(),
-      't' => { board = new_board.transpose(); continue },
-      _ => (),
+      'w' => new_board = board.slide_up(),
+      's' => new_board = board.slide_down(),
+      'd' => new_board = board.slide_right(),
+      'a' => new_board = board.slide_left(),
+      't' => { board = board.transpose(); continue },
+      'T' => { board = board.transpose2(); continue },
+      'f' => { board = board.horiz_flip(); continue },
+      _ => continue,
     }
 
     if new_board == board {
@@ -357,7 +428,7 @@ fn ai_play_multi_games() {
   //let mut rng : rand::ThreadRng = rand::thread_rng();
 
   let now = Instant::now();
-  let n = 10;
+  let n = 50;
   let mut tot_score = 0;
   for _ in 0..n {
     let score = ai_play(&mut rng, false);
@@ -375,5 +446,6 @@ fn ai_play_multi_games() {
 fn main() {
   init_score_table();
 
+  //play_manual().unwrap();
   ai_play_multi_games();
 }
