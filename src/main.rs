@@ -8,7 +8,6 @@ use std::time::Instant;
 struct Board(u64);
 
 impl Board {
-  #[allow(dead_code)]
   fn print_spacing() {
     for _ in 0..10 { println!(); }
   }
@@ -50,9 +49,9 @@ impl Board {
     ((self.0 >> (tile * 4)) & 0xf) as i32
   }
 
-  fn set_tile(&mut self, tile: i32, val: i32) {
+  fn set_tile(self, tile: i32, val: i32) -> Board {
     debug_assert_eq!(self.get_tile(tile), 0);
-    self.0 |= (val as u64) << (tile * 4);
+    Board(self.0 | (val as u64) << (tile * 4))
   }
 
   fn comp_move(&mut self, rng: &mut Rng) -> i32 {
@@ -69,7 +68,7 @@ impl Board {
       }
     }
     let four = rng.next_f32() < 0.1;
-    self.set_tile(pos, if four { 2 } else { 1 });
+    self.0 = self.set_tile(pos, if four { 2 } else { 1 }).0;
     if four { 1 } else { 0 }
   }
 
@@ -169,12 +168,8 @@ fn ai_comp_move(board: Board, depth: i32) -> f32 {
   let mut score = 0f32;
   for tile in 0..16 {
     if board.get_tile(tile) == 0 {
-      let mut new_board = board;
-      new_board.set_tile(tile, 1);
-      score += ai_player_move(new_board, depth) * 0.9f32;
-      new_board = board;
-      new_board.set_tile(tile, 2);
-      score += ai_player_move(new_board, depth) * 0.1f32;
+      score += ai_player_move(board.set_tile(tile, 1), depth) * 0.9f32;
+      score += ai_player_move(board.set_tile(tile, 2), depth) * 0.1f32;
     }
   }
 
@@ -295,6 +290,10 @@ fn ai_play(rng: &mut Rng, print: bool) -> i32 {
   fours += board.comp_move(rng);
   fours += board.comp_move(rng);
 
+  if print {
+    Board::print_spacing();
+  }
+
   loop {
     if print {
       board.print(fours);
@@ -317,12 +316,18 @@ fn ai_play(rng: &mut Rng, print: bool) -> i32 {
     }
 
     if bestdir == -1 {
-      return board.game_score(fours);
+      break;
     }
 
     board = board.slide(bestdir);
     fours += board.comp_move(rng);
   }
+
+  if !print {
+    println!("Score: {}", board.game_score(fours));
+  }
+
+  board.game_score(fours)
 }
 
 
@@ -378,7 +383,6 @@ fn ai_play_multi_games() {
   for _ in 0..n {
     let score = ai_play(&mut rng, false);
     tot_score += score;
-    println!("Score: {}", score);
   }
 
   let elapsed = now.elapsed();
