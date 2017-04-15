@@ -94,13 +94,13 @@ impl Board {
   }
 
   fn slide_up(self) -> Board {
-    let t = self.transpose2();
+    let t = self.transpose();
     Board(unsafe {
-      (*SLIDE_RIGHT_TABLE.get_unchecked(((t.0 >> 0) & 0xffff) as usize) as u64) << 0 |
-      (*SLIDE_RIGHT_TABLE.get_unchecked(((t.0 >> 16) & 0xffff) as usize) as u64) << 16 |
-      (*SLIDE_RIGHT_TABLE.get_unchecked(((t.0 >> 32) & 0xffff) as usize) as u64) << 32 |
-      (*SLIDE_RIGHT_TABLE.get_unchecked(((t.0 >> 48) & 0xffff) as usize) as u64) << 48
-      }).transpose2()
+      (*SLIDE_LEFT_TABLE.get_unchecked(((t.0 >> 0) & 0xffff) as usize) as u64) << 0 |
+      (*SLIDE_LEFT_TABLE.get_unchecked(((t.0 >> 16) & 0xffff) as usize) as u64) << 16 |
+      (*SLIDE_LEFT_TABLE.get_unchecked(((t.0 >> 32) & 0xffff) as usize) as u64) << 32 |
+      (*SLIDE_LEFT_TABLE.get_unchecked(((t.0 >> 48) & 0xffff) as usize) as u64) << 48
+      }).transpose()
   }
 
   fn slide_right(self) -> Board {
@@ -133,75 +133,15 @@ impl Board {
   }
 
   fn transpose(self) -> Board {
-    // 0123      048c      0 3 6 9
-    // 4567  ->  159d  =  -3 0 3 6
-    // 89ab      26ae     -6-3 0 3
-    // cdef      37bf     -9-6-3 0
-
-
-    //  0 0 6 6
-    //  0 0 6 6
-    // -6-6 0 0
-    // -6-6 0 0
-
     let a1 = self.0 & 0xf0f0_0f0f_f0f0_0f0f_u64;
-    //                  0_2_ _5_7 8_a_ _d_f
     let a2 = self.0 & 0x0000_f0f0_0000_f0f0_u64;
-    //                  ____ 4_6_ ____ c_e_
     let a3 = self.0 & 0x0f0f_0000_0f0f_0000_u64;
-    //                  _1_3 ____ _9_b ____
     let a = a1 | (a2 << 12) | (a3 >> 12);
-    //                  0426 1537 8cae 9dbf
-
     let b1 = a      & 0xff00_ff00_00ff_00ff_u64;
-    //                  04__ 15__ __ae __bf
     let b2 = a      & 0x00ff_00ff_0000_0000_u64;
-    //                  __26 __37 ____ ____
     let b3 = a      & 0x0000_0000_ff00_ff00_u64;
-    //                  ____ ____ 8c__ 9d__
-
     Board(b1 | (b2 >> 24) | (b3 << 24))
-    //                  048c 159d 26ae 37bf
   }
-
-  fn transpose2(self) -> Board {
-    // 0123      fb73      15 10   5   0
-    // 4567  ->  ea62   =  10  5   0  -5
-    // 89ab      d951       5  0  -5 -10
-    // cdef      c840       0 -5 -10 -15
-
-    // 10 10   0    0
-    // 10 10   0    0
-    //  0  0  -10 -10
-    //  0  0  -10 -10
-
-
-    let a1 = self.0 & 0x0f0f_f0f0_0f0f_f0f0_u64;
-    let a2 = self.0 & 0x0000_0f0f_0000_0f0f_u64;
-    let a3 = self.0 & 0xf0f0_0000_f0f0_0000_u64;
-    let a = a1 | (a2 << 20) | (a3 >> 20);
-
-    let b1 = a      & 0x00ff_00ff_ff00_ff00_u64;
-    let b2 = a      & 0xff00_ff00_0000_0000_u64;
-    let b3 = a      & 0x0000_0000_00ff_00ff_u64;
-
-    Board(b1 | (b2 >> 40) | (b3 << 40))
-  }
-
-  fn horiz_flip(self) -> Board {
-    // 0123      3210      3  1 -1 -3
-    // 4567  ->  7654   =  3  1 -1 -3
-    // 89ab      ba98      3  1 -1 -3
-    // cdef      fedc      3  1 -1 -3
-
-    let a1 = self.0 & 0xf000_f000_f000_f000_u64;
-    let a2 = self.0 & 0x0f00_0f00_0f00_0f00_u64;
-    let a3 = self.0 & 0x00f0_00f0_00f0_00f0_u64;
-    let a4 = self.0 & 0x000f_000f_000f_000f_u64;
-
-    Board(a1 >> 12 | a2 >> 4 | a3 << 4 | a4 << 12)
-  }
-
 
   fn score(self) -> f32 {
     let trans = self.transpose();
@@ -411,8 +351,6 @@ fn play_manual() -> std::result::Result<(), std::io::Error> {
       'd' => new_board = board.slide_right(),
       'a' => new_board = board.slide_left(),
       't' => { board = board.transpose(); continue },
-      'T' => { board = board.transpose2(); continue },
-      'f' => { board = board.horiz_flip(); continue },
       _ => continue,
     }
 
