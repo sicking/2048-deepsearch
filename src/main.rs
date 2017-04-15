@@ -86,40 +86,39 @@ impl Board {
   fn slide_down(self) -> Board {
     let t = self.transpose();
     Board(unsafe {
-      (SLIDE_TABLE[((t.0 >> 0) & 0xffff) as usize] as u64) << 0 |
-      (SLIDE_TABLE[((t.0 >> 16) & 0xffff) as usize] as u64) << 16 |
-      (SLIDE_TABLE[((t.0 >> 32) & 0xffff) as usize] as u64) << 32 |
-      (SLIDE_TABLE[((t.0 >> 48) & 0xffff) as usize] as u64) << 48
+      (*SLIDE_RIGHT_TABLE.get_unchecked(((t.0 >> 0) & 0xffff) as usize) as u64) << 0 |
+      (*SLIDE_RIGHT_TABLE.get_unchecked(((t.0 >> 16) & 0xffff) as usize) as u64) << 16 |
+      (*SLIDE_RIGHT_TABLE.get_unchecked(((t.0 >> 32) & 0xffff) as usize) as u64) << 32 |
+      (*SLIDE_RIGHT_TABLE.get_unchecked(((t.0 >> 48) & 0xffff) as usize) as u64) << 48
       }).transpose()
   }
 
   fn slide_up(self) -> Board {
     let t = self.transpose2();
     Board(unsafe {
-      (SLIDE_TABLE[((t.0 >> 0) & 0xffff) as usize] as u64) << 0 |
-      (SLIDE_TABLE[((t.0 >> 16) & 0xffff) as usize] as u64) << 16 |
-      (SLIDE_TABLE[((t.0 >> 32) & 0xffff) as usize] as u64) << 32 |
-      (SLIDE_TABLE[((t.0 >> 48) & 0xffff) as usize] as u64) << 48
+      (*SLIDE_RIGHT_TABLE.get_unchecked(((t.0 >> 0) & 0xffff) as usize) as u64) << 0 |
+      (*SLIDE_RIGHT_TABLE.get_unchecked(((t.0 >> 16) & 0xffff) as usize) as u64) << 16 |
+      (*SLIDE_RIGHT_TABLE.get_unchecked(((t.0 >> 32) & 0xffff) as usize) as u64) << 32 |
+      (*SLIDE_RIGHT_TABLE.get_unchecked(((t.0 >> 48) & 0xffff) as usize) as u64) << 48
       }).transpose2()
   }
 
   fn slide_right(self) -> Board {
     Board(unsafe {
-      (SLIDE_TABLE[((self.0 >> 0) & 0xffff) as usize] as u64) << 0 |
-      (SLIDE_TABLE[((self.0 >> 16) & 0xffff) as usize] as u64) << 16 |
-      (SLIDE_TABLE[((self.0 >> 32) & 0xffff) as usize] as u64) << 32 |
-      (SLIDE_TABLE[((self.0 >> 48) & 0xffff) as usize] as u64) << 48
+      (*SLIDE_RIGHT_TABLE.get_unchecked(((self.0 >> 0) & 0xffff) as usize) as u64) << 0 |
+      (*SLIDE_RIGHT_TABLE.get_unchecked(((self.0 >> 16) & 0xffff) as usize) as u64) << 16 |
+      (*SLIDE_RIGHT_TABLE.get_unchecked(((self.0 >> 32) & 0xffff) as usize) as u64) << 32 |
+      (*SLIDE_RIGHT_TABLE.get_unchecked(((self.0 >> 48) & 0xffff) as usize) as u64) << 48
       })
   }
 
   fn slide_left(self) -> Board {
-    let t = self.horiz_flip();
     Board(unsafe {
-      (SLIDE_TABLE[((t.0 >> 0) & 0xffff) as usize] as u64) << 0 |
-      (SLIDE_TABLE[((t.0 >> 16) & 0xffff) as usize] as u64) << 16 |
-      (SLIDE_TABLE[((t.0 >> 32) & 0xffff) as usize] as u64) << 32 |
-      (SLIDE_TABLE[((t.0 >> 48) & 0xffff) as usize] as u64) << 48
-      }).horiz_flip()
+      (*SLIDE_LEFT_TABLE.get_unchecked(((self.0 >> 0) & 0xffff) as usize) as u64) << 0 |
+      (*SLIDE_LEFT_TABLE.get_unchecked(((self.0 >> 16) & 0xffff) as usize) as u64) << 16 |
+      (*SLIDE_LEFT_TABLE.get_unchecked(((self.0 >> 32) & 0xffff) as usize) as u64) << 32 |
+      (*SLIDE_LEFT_TABLE.get_unchecked(((self.0 >> 48) & 0xffff) as usize) as u64) << 48
+      })
   }
 
   fn game_score(self, fours: i32) -> i32 {
@@ -207,14 +206,14 @@ impl Board {
   fn score(self) -> f32 {
     let trans = self.transpose();
     unsafe {
-      SCORE_TABLE[((self.0 >> 0) & 0xffff) as usize] +
-      SCORE_TABLE[((self.0 >> 16) & 0xffff) as usize] +
-      SCORE_TABLE[((self.0 >> 32) & 0xffff) as usize] +
-      SCORE_TABLE[((self.0 >> 48) & 0xffff) as usize] +
-      SCORE_TABLE[((trans.0 >> 0) & 0xffff) as usize] +
-      SCORE_TABLE[((trans.0 >> 16) & 0xffff) as usize] +
-      SCORE_TABLE[((trans.0 >> 32) & 0xffff) as usize] +
-      SCORE_TABLE[((trans.0 >> 48) & 0xffff) as usize]
+      SCORE_TABLE.get_unchecked(((self.0 >> 0) & 0xffff) as usize) +
+      SCORE_TABLE.get_unchecked(((self.0 >> 16) & 0xffff) as usize) +
+      SCORE_TABLE.get_unchecked(((self.0 >> 32) & 0xffff) as usize) +
+      SCORE_TABLE.get_unchecked(((self.0 >> 48) & 0xffff) as usize) +
+      SCORE_TABLE.get_unchecked(((trans.0 >> 0) & 0xffff) as usize) +
+      SCORE_TABLE.get_unchecked(((trans.0 >> 16) & 0xffff) as usize) +
+      SCORE_TABLE.get_unchecked(((trans.0 >> 32) & 0xffff) as usize) +
+      SCORE_TABLE.get_unchecked(((trans.0 >> 48) & 0xffff) as usize)
     }
   }
 
@@ -269,7 +268,8 @@ const SCORE_MERGES_WEIGHT : f32 = 700.0f32;
 const SCORE_EMPTY_WEIGHT : f32 = 270.0f32;
 
 static mut SCORE_TABLE : [f32; 65536] = [0f32; 65536];
-static mut SLIDE_TABLE : [u16; 65536] = [0u16; 65536];
+static mut SLIDE_RIGHT_TABLE : [u16; 65536] = [0u16; 65536];
+static mut SLIDE_LEFT_TABLE : [u16; 65536] = [0u16; 65536];
 
 fn init_score_table() {
   for n in 0..65536 {
@@ -336,7 +336,14 @@ fn init_score_table() {
         res |= (val as u16) << dest_pos;
       }
     }
-    unsafe { SLIDE_TABLE[n] = res; }
+    fn reverse_row(row: u16) -> u16 {
+      ((row & 0xf000) >> 12) |
+      ((row & 0x0f00) >> 4) |
+      ((row & 0x00f0) << 4) |
+      ((row & 0x000f) << 12)
+    }
+    unsafe { SLIDE_RIGHT_TABLE[n] = res; }
+    unsafe { SLIDE_LEFT_TABLE[reverse_row(n as u16) as usize] = reverse_row(res); }
 
   }
 }
