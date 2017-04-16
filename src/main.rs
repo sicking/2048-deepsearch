@@ -45,6 +45,25 @@ impl Board {
     n2 as i32
   }
 
+  fn distinct(self) -> i32 {
+    let mut bits = 0usize;
+    let mut b = self.0;
+    while b != 0 {
+      bits |= 1 << (b & 0xf);
+      b >>= 4;
+    }
+
+    // Don't count empty tiles.
+    bits &= !1usize;
+
+    let mut count = 0;
+    while bits != 0 {
+        bits &= bits - 1;
+        count += 1;
+    }
+    count
+  }
+
   fn get_tile(self, tile: i32) -> i32 {
     debug_assert!(tile >= 0 && tile < 16);
     ((self.0 >> (tile * 4)) & 0xf) as i32
@@ -159,8 +178,8 @@ impl Board {
 
 }
 
-fn ai_comp_move(board: Board, depth: i32, hash: &mut HashMap<Board, (i32, f32)>) -> f32 {
-  if depth <= 0 {
+fn ai_comp_move(board: Board, depth: i32, hash: &mut HashMap<Board, (i32, f32)>, prob: f32) -> f32 {
+  if depth <= 0 || prob < 0.0001 {
     return board.score();
   }
 
@@ -173,11 +192,15 @@ fn ai_comp_move(board: Board, depth: i32, hash: &mut HashMap<Board, (i32, f32)>)
 
   let empty = board.empty();
   debug_assert!(empty != 0);
+
+  let prob1 = prob / (empty as f32) * 0.9;
+  let prob2 = prob / (empty as f32) * 0.1;
+
   let mut score = 0f32;
   for tile in 0..16 {
     if board.get_tile(tile) == 0 {
-      score += ai_player_move(board.set_tile(tile, 1), depth, hash) * 0.9f32;
-      score += ai_player_move(board.set_tile(tile, 2), depth, hash) * 0.1f32;
+      score += ai_player_move(board.set_tile(tile, 1), depth, hash, prob1) * 0.9f32;
+      score += ai_player_move(board.set_tile(tile, 2), depth, hash, prob2) * 0.1f32;
     }
   }
 
@@ -188,7 +211,7 @@ fn ai_comp_move(board: Board, depth: i32, hash: &mut HashMap<Board, (i32, f32)>)
   score
 }
 
-fn ai_player_move(board: Board, depth: i32, hash: &mut HashMap<Board, (i32, f32)>)  -> f32 {
+fn ai_player_move(board: Board, depth: i32, hash: &mut HashMap<Board, (i32, f32)>, prob: f32)  -> f32 {
   let mut score = 0f32;
 
   for dir in 0..4 {
@@ -197,7 +220,7 @@ fn ai_player_move(board: Board, depth: i32, hash: &mut HashMap<Board, (i32, f32)
       continue;
     }
 
-    let move_score = ai_comp_move(new_board, depth - 1, hash);
+    let move_score = ai_comp_move(new_board, depth - 1, hash, prob);
     if move_score > score {
       score = move_score;
     }
@@ -323,7 +346,7 @@ fn ai_play(rng: &mut Rng, print: bool) -> i32 {
         continue;
       }
 
-      let exp = ai_comp_move(new_board, 2, &mut hash);
+      let exp = ai_comp_move(new_board, std::cmp::max(3, new_board.distinct()), &mut hash, 1f32);
       if exp > bestexp {
         bestexp = exp;
         bestdir = dir;
@@ -396,7 +419,7 @@ fn ai_play_multi_games() {
   let n = 50;
   let mut tot_score = 0;
   for _ in 0..n {
-    let score = ai_play(&mut rng, false);
+    let score = ai_play(&mut rng, true);
     tot_score += score;
   }
 
