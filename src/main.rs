@@ -4,6 +4,7 @@ extern crate getch;
 use rand::{Rng, StdRng};
 use std::time::Instant;
 use std::collections::HashMap;
+use std::str::FromStr;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 struct Board(u64);
@@ -21,7 +22,7 @@ impl Board {
         print!("|\n+---+---+---+---+\n");
       }
     }
-    println!("Score: {}      ", self.game_score(fours));
+    println!("Score: {}", self.game_score(fours));
   }
 
   fn empty(self) -> i32 {
@@ -62,6 +63,14 @@ impl Board {
         count += 1;
     }
     count
+  }
+
+  fn max_val(self) -> i32 {
+    let mut max = 0;
+    for pos in 0..16 {
+      max = std::cmp::max(max, self.get_tile(pos));
+    }
+    max
   }
 
   fn get_tile(self, tile: i32) -> i32 {
@@ -298,7 +307,9 @@ fn init_score_table() {
       if val == 0 {
         // do nothing
       } else if val == merge_val {
-        res += (1 as u16) << dest_pos;
+        if (res >> dest_pos) & 0xf != 15 {
+          res += (1 as u16) << dest_pos;
+        }
         merge_val = 0;
       } else {
         dest_pos += 4;
@@ -318,7 +329,7 @@ fn init_score_table() {
   }
 }
 
-fn ai_play(rng: &mut Rng, print: bool) -> i32 {
+fn ai_play(rng: &mut Rng, until: i32, print: bool) -> i32 {
 
   let mut board = Board(0);
   let mut fours = 0;
@@ -334,6 +345,10 @@ fn ai_play(rng: &mut Rng, print: bool) -> i32 {
   loop {
     if print {
       board.print(fours);
+    }
+
+    if until > 0 && board.max_val() >= until {
+      break;
     }
 
     let mut bestexp = 0f32;
@@ -368,8 +383,6 @@ fn ai_play(rng: &mut Rng, print: bool) -> i32 {
   board.game_score(fours)
 }
 
-
-#[allow(dead_code)]
 fn play_manual() -> std::result::Result<(), std::io::Error> {
   Board::print_spacing();
 
@@ -393,7 +406,6 @@ fn play_manual() -> std::result::Result<(), std::io::Error> {
       's' => new_board = board.slide_down(),
       'd' => new_board = board.slide_right(),
       'a' => new_board = board.slide_left(),
-      't' => { board = board.transpose(); continue },
       _ => continue,
     }
 
@@ -408,18 +420,17 @@ fn play_manual() -> std::result::Result<(), std::io::Error> {
   Ok(())
 }
 
+const SEED: &'static[usize] = &[1, 2, 3, 4, 5];
 
-#[allow(dead_code)]
-fn ai_play_multi_games() {
-  let seed: &[_] = &[1, 2, 3, 4, 5];
-  let mut rng: StdRng = rand::SeedableRng::from_seed(seed);
+
+fn ai_play_multi_games(n: i32) {
+  let mut rng: StdRng = rand::SeedableRng::from_seed(SEED);
   //let mut rng : rand::ThreadRng = rand::thread_rng();
 
   let now = Instant::now();
-  let n = 50;
   let mut tot_score = 0;
   for _ in 0..n {
-    let score = ai_play(&mut rng, true);
+    let score = ai_play(&mut rng, -1, true);
     tot_score += score;
   }
 
@@ -429,10 +440,24 @@ fn ai_play_multi_games() {
              elapsed.as_secs() as f64 + (elapsed.subsec_nanos() as f64) / 1_000_000_000f64);  
 }
 
+fn ai_play_until(until: i32) {
+  let mut rng: StdRng = rand::SeedableRng::from_seed(SEED);
+  //let mut rng : rand::ThreadRng = rand::thread_rng();
+
+  let now = Instant::now();
+  ai_play(&mut rng, until, true);
+  let elapsed = now.elapsed();
+
+  println!("Time: {}",
+             elapsed.as_secs() as f64 + (elapsed.subsec_nanos() as f64) / 1_000_000_000f64);  
+}
 
 fn main() {
   init_score_table();
 
-  //play_manual().unwrap();
-  ai_play_multi_games();
+  match std::env::args().nth(1).unwrap_or("".to_string()).as_ref() {
+    "manual" => play_manual().unwrap(),
+    "until" => ai_play_until(i32::from_str(&std::env::args().nth(2).unwrap()).unwrap()),
+    _ => ai_play_multi_games(std::env::args().nth(1).map(|s| i32::from_str(&s).unwrap()).unwrap_or(10)),
+  }
 }
