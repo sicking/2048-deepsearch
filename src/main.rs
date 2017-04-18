@@ -1,7 +1,6 @@
 extern crate rand;
 extern crate getch;
 
-use rand::{Rng, StdRng};
 use std::time::Instant;
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -83,11 +82,11 @@ impl Board {
     Board(self.0 | (val as u64) << (tile * 4))
   }
 
-  fn comp_move(&mut self, rng: &mut Rng) -> i32 {
+  fn comp_move(&mut self) -> i32 {
     // self.empty() can't handle the completely-empty case.
     debug_assert!(self.0 == 0 || self.empty() > 0);
     let size = if self.0 == 0 { 16 } else { self.empty() };
-    let mut n = (rng.next_f32() * (size as f32)).floor() as i32;
+    let mut n = rng(size);
     debug_assert!(self.0 == 0 || n < self.empty());
     let mut pos = -1;
     while n >= 0 {
@@ -96,7 +95,7 @@ impl Board {
         n -= 1;
       }
     }
-    let four = rng.next_f32() < 0.1;
+    let four = rng(10) == 0;
     self.0 = self.set_tile(pos, if four { 2 } else { 1 }).0;
     if four { 1 } else { 0 }
   }
@@ -329,12 +328,11 @@ fn init_score_table() {
   }
 }
 
-fn ai_play(rng: &mut Rng, until: i32, print: bool) -> i32 {
-
+fn ai_play(until: i32, print: bool) -> i32 {
   let mut board = Board(0);
   let mut fours = 0;
-  fours += board.comp_move(rng);
-  fours += board.comp_move(rng);
+  fours += board.comp_move();
+  fours += board.comp_move();
 
   if print {
     Board::print_spacing();
@@ -373,7 +371,7 @@ fn ai_play(rng: &mut Rng, until: i32, print: bool) -> i32 {
     }
 
     board = board.slide(bestdir);
-    fours += board.comp_move(rng);
+    fours += board.comp_move();
   }
 
   if !print {
@@ -388,11 +386,9 @@ fn play_manual() -> std::result::Result<(), std::io::Error> {
 
   let mut board = Board(0);
 
-  let mut rng : rand::ThreadRng = rand::thread_rng();
-
   let mut fours = 0;
-  fours += board.comp_move(&mut rng);
-  fours += board.comp_move(&mut rng);
+  fours += board.comp_move();
+  fours += board.comp_move();
 
   let io = getch::Getch::new()?;
 
@@ -414,23 +410,28 @@ fn play_manual() -> std::result::Result<(), std::io::Error> {
     }
 
     board = new_board;
-    fours += board.comp_move(&mut rng);
+    fours += board.comp_move();
   }
 
   Ok(())
 }
 
-const SEED: &'static[usize] = &[1, 2, 3, 4, 5];
+static mut SEED: u32 = 0x17004711;
 
+fn rng(max: i32) -> i32 {
+  let mut x = unsafe { SEED };
+  x ^= x << 13;
+  x ^= x >> 17;
+  x ^= x << 5;
+  unsafe { SEED = x; }
+  (x % (max as u32)) as i32
+}
 
 fn ai_play_multi_games(n: i32) {
-  let mut rng: StdRng = rand::SeedableRng::from_seed(SEED);
-  //let mut rng : rand::ThreadRng = rand::thread_rng();
-
   let now = Instant::now();
   let mut tot_score = 0;
   for _ in 0..n {
-    let score = ai_play(&mut rng, -1, true);
+    let score = ai_play(-1, false);
     tot_score += score;
   }
 
@@ -441,11 +442,8 @@ fn ai_play_multi_games(n: i32) {
 }
 
 fn ai_play_until(until: i32) {
-  let mut rng: StdRng = rand::SeedableRng::from_seed(SEED);
-  //let mut rng : rand::ThreadRng = rand::thread_rng();
-
   let now = Instant::now();
-  ai_play(&mut rng, until, true);
+  ai_play(until, true);
   let elapsed = now.elapsed();
 
   println!("Time: {}",
