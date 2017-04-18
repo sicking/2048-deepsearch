@@ -10,7 +10,7 @@ struct Board(u64);
 
 impl Board {
   fn print_spacing() {
-    for _ in 0..10 { println!(); }
+    print!("\n\n\n\n\n\n\n\n\n\n\n\n\x1b[2A");
   }
   fn print(self, fours: i32) {
     let nums = ["   ", "  2", "  4", "  8", " 16", " 32", " 64", "128", "256", "512", " 1K", " 2K", " 4K", " 8K", "16K", "32K"];
@@ -186,15 +186,15 @@ impl Board {
 
 }
 
-fn ai_comp_move(board: Board, depth: i32, hash: &mut HashMap<Board, (i32, f32)>, prob: f32) -> f32 {
+fn ai_comp_move(board: Board, depth: i32, hash: &mut HashMap<Board, (i32, f32, f32)>, prob: f32) -> (f32, f32) {
   if depth <= 0 || prob < 0.0001 {
-    return board.score();
+    return (board.score(), 0f32);
   }
 
   if let Some(entry) = hash.get(&board) {
-    let (hash_depth, score) = *entry;
+    let (hash_depth, score, end_prob) = *entry;
     if hash_depth >= depth {
-      return score;
+      return (score, end_prob);
     }
   }
 
@@ -205,22 +205,27 @@ fn ai_comp_move(board: Board, depth: i32, hash: &mut HashMap<Board, (i32, f32)>,
   let prob2 = prob / (empty as f32) * 0.1;
 
   let mut score = 0f32;
+  let mut end_prob = 0f32;
   for tile in 0..16 {
     if board.get_tile(tile) == 0 {
-      score += ai_player_move(board.set_tile(tile, 1), depth, hash, prob1) * 0.9f32;
-      score += ai_player_move(board.set_tile(tile, 2), depth, hash, prob2) * 0.1f32;
+      let (move_score_1, move_end_prob_1) = ai_player_move(board.set_tile(tile, 1), depth, hash, prob1);
+      let (move_score_2, move_end_prob_2) = ai_player_move(board.set_tile(tile, 2), depth, hash, prob2);
+      score += move_score_1 * 0.9 + move_score_2 * 0.1;
+      end_prob += move_end_prob_1 * 0.9 + move_end_prob_2 * 0.1;
     }
   }
 
   score /= empty as f32;
+  end_prob /= empty as f32;
 
-  hash.insert(board, (depth, score));
+  hash.insert(board, (depth, score, end_prob));
 
-  score
+  (score, end_prob)
 }
 
-fn ai_player_move(board: Board, depth: i32, hash: &mut HashMap<Board, (i32, f32)>, prob: f32)  -> f32 {
+fn ai_player_move(board: Board, depth: i32, hash: &mut HashMap<Board, (i32, f32, f32)>, prob: f32)  -> (f32, f32) {
   let mut score = 0f32;
+  let mut end_prob = 1f32;
 
   for dir in 0..4 {
     let new_board = board.slide(dir);
@@ -228,13 +233,14 @@ fn ai_player_move(board: Board, depth: i32, hash: &mut HashMap<Board, (i32, f32)
       continue;
     }
 
-    let move_score = ai_comp_move(new_board, depth - 1, hash, prob);
+    let (move_score, move_end_prob) = ai_comp_move(new_board, depth - 1, hash, prob);
     if move_score > score {
       score = move_score;
+      end_prob = move_end_prob;
     }
   }
 
-  score
+  (score, end_prob)
 }
 
 const SCORE_LOST_PENALTY : f32 = 200000.0f32;
@@ -328,6 +334,14 @@ fn init_score_table() {
   }
 }
 
+#[derive(Debug)]
+enum PlayState {
+  ZeroProbDeath,
+  LowProbDeath,
+  HighPropDeath,
+  VeryHighProbDeath,
+}
+
 fn ai_play(until: i32, print: bool) -> i32 {
   let mut board = Board(0);
   let mut fours = 0;
@@ -340,6 +354,8 @@ fn ai_play(until: i32, print: bool) -> i32 {
 
   let mut hash = HashMap::new();
 
+  let mut state = PlayState::ZeroProbDeath;
+
   loop {
     if print {
       board.print(fours);
@@ -349,21 +365,55 @@ fn ai_play(until: i32, print: bool) -> i32 {
       break;
     }
 
-    let mut bestexp = 0f32;
-    let mut bestdir = -1;
     hash.clear();
 
-    for dir in 0..4 {
-      let new_board = board.slide(dir);
-      if new_board == board {
-        continue;
+    let mut bestdir = -1;
+    let mut searched_depth = 0;
+    let mut depth;
+
+    let mut searches = 0;
+
+    while {
+      depth = match state {
+        PlayState::ZeroProbDeath => std::cmp::max(3, board.distinct() - 4),
+        PlayState::LowProbDeath => std::cmp::max(3, board.distinct() - 2),
+        PlayState::HighPropDeath => std::cmp::max(3, board.distinct()),
+        PlayState::VeryHighProbDeath => 15,
+      };
+      depth > searched_depth } {
+
+      bestdir = -1;
+      let mut bestexp = 0f32;
+      let mut best_end_prob = 0f32;
+
+      for dir in 0..4 {
+        let new_board = board.slide(dir);
+        if new_board == board {
+          continue;
+        }
+
+        let (exp, end_prob) = ai_comp_move(new_board, depth, &mut hash, 1f32);
+        if exp > bestexp {
+          bestexp = exp;
+          bestdir = dir;
+          best_end_prob = end_prob;
+        }
       }
 
-      let exp = ai_comp_move(new_board, std::cmp::max(3, new_board.distinct() - 2), &mut hash, 1f32);
-      if exp > bestexp {
-        bestexp = exp;
-        bestdir = dir;
-      }
+      searched_depth = depth;
+      searches += 1;
+
+      state = if best_end_prob > 0.05 {
+        PlayState::VeryHighProbDeath
+      } else if best_end_prob > 0.001 {
+        PlayState::HighPropDeath
+      } else if best_end_prob > 0.0 {
+        PlayState::LowProbDeath
+      } else {
+        PlayState::ZeroProbDeath
+      };
+
+      print!("Death prob: {:.9}, Depth: {} State: {:?}          \n\x1b[1A", best_end_prob, depth, state);
     }
 
     if bestdir == -1 {
