@@ -359,7 +359,7 @@ fn ai_play(until: i32, print: bool) -> i32 {
         continue;
       }
 
-      let exp = ai_comp_move(new_board, std::cmp::max(3, new_board.distinct()), &mut hash, 1f32);
+      let exp = ai_comp_move(new_board, std::cmp::max(3, new_board.distinct() - 2), &mut hash, 1f32);
       if exp > bestexp {
         bestexp = exp;
         bestdir = dir;
