@@ -1,9 +1,14 @@
 extern crate rand;
 extern crate getch;
+extern crate byteorder;
 
 use std::time::Instant;
 use std::collections::HashMap;
 use std::str::FromStr;
+use byteorder::{NativeEndian, WriteBytesExt, ReadBytesExt};
+use std::fs::File;
+use std::io::BufWriter;
+use std::result::Result;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 struct Board(u64);
@@ -45,7 +50,7 @@ impl Board {
     n2 as i32
   }
 
-  fn distinct(self) -> i32 {
+  fn distinct(self) -> u8 {
     let mut bits = 0usize;
     let mut b = self.0;
     while b != 0 {
@@ -186,14 +191,14 @@ impl Board {
 
 }
 
-fn ai_comp_move(board: Board, depth: i32, hash: &mut HashMap<Board, (i32, f32, f32)>, prob: f32) -> (f32, f32) {
+fn ai_comp_move(board: Board, depth: u8, hash: &mut HashMap<Board, (i32, f32, f32)>, prob: f32) -> (f32, f32) {
   if depth <= 0 || prob < 0.0001 {
     return (board.score(), 0f32);
   }
 
   if let Some(entry) = hash.get(&board) {
     let (hash_depth, score, end_prob) = *entry;
-    if hash_depth >= depth {
+    if hash_depth >= depth as i32 {
       return (score, end_prob);
     }
   }
@@ -218,12 +223,12 @@ fn ai_comp_move(board: Board, depth: i32, hash: &mut HashMap<Board, (i32, f32, f
   score /= empty as f32;
   end_prob /= empty as f32;
 
-  hash.insert(board, (depth, score, end_prob));
+  hash.insert(board, (depth as i32, score, end_prob));
 
   (score, end_prob)
 }
 
-fn ai_player_move(board: Board, depth: i32, hash: &mut HashMap<Board, (i32, f32, f32)>, prob: f32)  -> (f32, f32) {
+fn ai_player_move(board: Board, depth: u8, hash: &mut HashMap<Board, (i32, f32, f32)>, prob: f32)  -> (f32, f32) {
   let mut score = 0f32;
   let mut end_prob = 1f32;
 
@@ -342,11 +347,113 @@ enum PlayState {
   VeryHighProbDeath,
 }
 
-fn ai_play(until: i32, print: bool) -> i32 {
+impl PlayState {
+  fn from_prob(prob: f32) -> PlayState {
+    if prob > 0.05 {
+      PlayState::VeryHighProbDeath
+    } else if prob > 0.001 {
+      PlayState::HighPropDeath
+    } else if prob > 0.0 {
+      PlayState::LowProbDeath
+    } else {
+      PlayState::ZeroProbDeath
+    }
+  }
+}
+
+struct GameState {
+  board: Board,
+  fours: i32,
+  bestexp: f32,
+  best_end_prob: f32,
+  bestdir: i8,
+  depth: u8,
+  searches: u8,
+}
+
+fn replay(filename: String) -> Result<(), std::io::Error> {
+
+  let mut states: Vec<GameState>;
+
+  {
+    let mut extra_searches = 0;
+    let mut death_total = 0f32;
+    let mut f = File::open(filename)?;
+    let n = f.metadata()?.len() / 23;
+    states = Vec::with_capacity(n as usize);
+    for _ in 0..n {
+      states.push(GameState {
+                    board: Board(f.read_u64::<NativeEndian>()?),
+                    fours: f.read_i32::<NativeEndian>()?,
+                    bestexp: f.read_f32::<NativeEndian>()?,
+                    best_end_prob: f.read_f32::<NativeEndian>()?,
+                    bestdir: f.read_i8()?,
+                    depth: f.read_u8()?,
+                    searches: f.read_u8()?,
+                  });
+      extra_searches += states.last().unwrap().searches - 1;
+      death_total += states.last().unwrap().best_end_prob;
+    }
+
+    println!("Total moves: {}", n);
+    println!("Redone searches: {}", extra_searches);
+    println!("Death probability sum: {}", death_total);
+  }
+
+
+  let io = getch::Getch::new()?;
+
+  let mut pos: isize = 0;
+
+  Board::print_spacing();
+  print!("\n\n\n\n\n\n");
+
+  loop {
+    let state = &states[pos as usize];
+
+    print!("\x1b[6A");
+    state.board.print(state.fours);
+    println!("Move: {}      ", pos);
+    println!("Expected heuristic score: {:.2}      ", state.bestexp);
+    println!("Probability of death: {:.9} ({:?})       ", state.best_end_prob, PlayState::from_prob(state.best_end_prob));
+    println!("Searched depth: {}  ", state.depth);
+    println!("Number of searches: {}  ", state.searches);
+    if state.bestdir == -1 {
+      println!("End of game.         ");
+    } else {
+      assert!(state.bestdir <= 3);
+      println!("Decided direction: {}", "RDLU".chars().nth(state.bestdir as usize).unwrap());
+    }
+
+    pos += match io.getch()? as char {
+      'q' => break,
+      'd' => 1,
+      's' => -1,
+      'f' => 10,
+      'a' => -10,
+      'D' => 100,
+      'S' => -100,
+      'F' => 1000,
+      'A' => -1000,
+      _ => continue,
+    };
+    pos = std::cmp::max(0, pos);
+    pos = std::cmp::min((states.len() - 1) as isize, pos);
+  }
+
+  Ok(())
+}
+
+fn ai_play(until: i32, print: bool, filename: Option<String>) -> Result<i32, std::io::Error> {
   let mut board = Board(0);
   let mut fours = 0;
   fours += board.comp_move();
   fours += board.comp_move();
+
+  let mut file = None;
+  if let Some(fname) = filename {
+    file = Some(BufWriter::new(File::create(fname)?));
+  }
 
   if print {
     Board::print_spacing();
@@ -369,7 +476,9 @@ fn ai_play(until: i32, print: bool) -> i32 {
 
     let mut bestdir = -1;
     let mut searched_depth = 0;
-    let mut depth;
+    let mut bestexp = 0f32;
+    let mut best_end_prob = 1f32;
+    let mut depth: u8;
 
     let mut searches = 0;
 
@@ -378,13 +487,13 @@ fn ai_play(until: i32, print: bool) -> i32 {
         PlayState::ZeroProbDeath => std::cmp::max(3, board.distinct() - 4),
         PlayState::LowProbDeath => std::cmp::max(3, board.distinct() - 2),
         PlayState::HighPropDeath => std::cmp::max(3, board.distinct()),
-        PlayState::VeryHighProbDeath => 15,
+        PlayState::VeryHighProbDeath => 17,
       };
       depth > searched_depth } {
 
       bestdir = -1;
-      let mut bestexp = 0f32;
-      let mut best_end_prob = 0f32;
+      bestexp = 0.0;
+      best_end_prob = 1.0;
 
       for dir in 0..4 {
         let new_board = board.slide(dir);
@@ -403,17 +512,19 @@ fn ai_play(until: i32, print: bool) -> i32 {
       searched_depth = depth;
       searches += 1;
 
-      state = if best_end_prob > 0.05 {
-        PlayState::VeryHighProbDeath
-      } else if best_end_prob > 0.001 {
-        PlayState::HighPropDeath
-      } else if best_end_prob > 0.0 {
-        PlayState::LowProbDeath
-      } else {
-        PlayState::ZeroProbDeath
-      };
+      state = PlayState::from_prob(best_end_prob);
 
       print!("Death prob: {:.9}, Depth: {} State: {:?}          \n\x1b[1A", best_end_prob, depth, state);
+    }
+
+    if let Some(ref mut f) = file.as_mut() {
+      f.write_u64::<NativeEndian>(board.0)?;
+      f.write_i32::<NativeEndian>(fours)?;
+      f.write_f32::<NativeEndian>(bestexp)?;
+      f.write_f32::<NativeEndian>(best_end_prob)?;
+      f.write_i8(bestdir as i8)?;
+      f.write_u8(searched_depth as u8)?;
+      f.write_u8(searches as u8)?;
     }
 
     if bestdir == -1 {
@@ -428,10 +539,10 @@ fn ai_play(until: i32, print: bool) -> i32 {
     println!("Score: {}", board.game_score(fours));
   }
 
-  board.game_score(fours)
+  Ok(board.game_score(fours))
 }
 
-fn play_manual() -> std::result::Result<(), std::io::Error> {
+fn play_manual() -> Result<(), std::io::Error> {
   Board::print_spacing();
 
   let mut board = Board(0);
@@ -477,27 +588,29 @@ fn rng(max: i32) -> i32 {
   (x % (max as u32)) as i32
 }
 
-fn ai_play_multi_games(n: i32) {
+fn ai_play_multi_games(n: i32) -> Result<(), std::io::Error> {
   let now = Instant::now();
   let mut tot_score = 0;
   for _ in 0..n {
-    let score = ai_play(-1, false);
+    let score = ai_play(-1, false, None)?;
     tot_score += score;
   }
 
   let elapsed = now.elapsed();
 
   println!("Average score: {}, time: {}", (tot_score as f32) / (n as f32),
-             elapsed.as_secs() as f64 + (elapsed.subsec_nanos() as f64) / 1_000_000_000f64);  
+             elapsed.as_secs() as f64 + (elapsed.subsec_nanos() as f64) / 1_000_000_000f64);
+  Ok(())
 }
 
-fn ai_play_until(until: i32) {
+fn ai_play_until(until: i32) -> Result<(), std::io::Error> {
   let now = Instant::now();
-  ai_play(until, true);
+  ai_play(until, true, Some("game.2048".to_string()))?;
   let elapsed = now.elapsed();
 
   println!("Time: {}",
              elapsed.as_secs() as f64 + (elapsed.subsec_nanos() as f64) / 1_000_000_000f64);  
+  Ok(())
 }
 
 fn main() {
@@ -505,7 +618,8 @@ fn main() {
 
   match std::env::args().nth(1).unwrap_or("".to_string()).as_ref() {
     "manual" => play_manual().unwrap(),
-    "until" => ai_play_until(i32::from_str(&std::env::args().nth(2).unwrap()).unwrap()),
-    _ => ai_play_multi_games(std::env::args().nth(1).map(|s| i32::from_str(&s).unwrap()).unwrap_or(10)),
+    "until" => ai_play_until(i32::from_str(&std::env::args().nth(2).unwrap()).unwrap()).unwrap(),
+    "replay" => replay("game.2048".to_string()).unwrap(),
+    _ => ai_play_multi_games(std::env::args().nth(1).map(|s| i32::from_str(&s).unwrap()).unwrap_or(10)).unwrap(),
   }
 }

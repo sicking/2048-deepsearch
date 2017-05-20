@@ -2,9 +2,15 @@
 name = "p2048"
 version = "0.1.0"
 dependencies = [
+ "byteorder 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "getch 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand 0.3.15 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
+
+[[package]]
+name = "byteorder"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "getch"
@@ -37,6 +43,7 @@ dependencies = [
 ]
 
 [metadata]
+"checksum byteorder 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)" = "c40977b0ee6b9885c9013cd41d9feffdd22deb3bb4dc3a71d901cc7a77de18c8"
 "checksum getch 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)" = "fdf8bd3f50b5db3f7aac456879b7d520662577fba651bbc00ca4fe32ff657b8d"
 "checksum libc 0.2.21 (registry+https://github.com/rust-lang/crates.io-index)" = "88ee81885f9f04bff991e306fea7c1c60a5f0f9e409e99f6b40e3311a3363135"
 "checksum rand 0.3.15 (registry+https://github.com/rust-lang/crates.io-index)" = "022e0636ec2519ddae48154b028864bdce4eaf7d35226ab8e65c611be97b189d"
