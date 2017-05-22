@@ -9,6 +9,8 @@ use byteorder::{NativeEndian, WriteBytesExt, ReadBytesExt};
 use std::fs::File;
 use std::io::BufWriter;
 use std::result::Result;
+use std::thread;
+use std::sync::mpsc::channel;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 struct Board(u64);
@@ -455,11 +457,37 @@ fn ai_play(until: i32, print: bool, filename: Option<String>) -> Result<i32, std
     file = Some(BufWriter::new(File::create(fname)?));
   }
 
+  let (res_tx, res_rx) = channel::<(i32, f32, f32)>();
+
+  let mut threads = Vec::new();
+  let mut channels = Vec::new();
+
+  for thread_dir in 0..4 {
+    let thread_res = res_tx.clone();
+    let (task_tx, task_rx) = channel::<(Board, u8)>();
+
+    threads.push(thread::spawn(move || {
+      for (board, depth) in task_rx {
+        let new_board = board.slide(thread_dir);
+        if new_board == board {
+          thread_res.send((thread_dir, -1.0, 1.0)).unwrap();
+          continue;
+        }
+
+        let mut hash = HashMap::new();
+        let (exp, end_prob) = ai_comp_move(new_board, depth, &mut hash, 1f32);
+
+        thread_res.send((thread_dir, exp, end_prob)).unwrap();
+      }
+    }));
+
+    channels.push(task_tx);
+  }
+
   if print {
     Board::print_spacing();
   }
 
-  let mut hash = HashMap::new();
 
   let mut state = PlayState::ZeroProbDeath;
 
@@ -471,8 +499,6 @@ fn ai_play(until: i32, print: bool, filename: Option<String>) -> Result<i32, std
     if until > 0 && board.max_val() >= until {
       break;
     }
-
-    hash.clear();
 
     let mut bestdir = -1;
     let mut searched_depth = 0;
@@ -496,12 +522,12 @@ fn ai_play(until: i32, print: bool, filename: Option<String>) -> Result<i32, std
       best_end_prob = 1.0;
 
       for dir in 0..4 {
-        let new_board = board.slide(dir);
-        if new_board == board {
-          continue;
-        }
+        channels[dir].send((board, depth)).unwrap();
+      }
 
-        let (exp, end_prob) = ai_comp_move(new_board, depth, &mut hash, 1f32);
+      for _ in 0..4 {
+        let (dir, exp, end_prob) = res_rx.recv().unwrap();
+
         if exp > bestexp {
           bestexp = exp;
           bestdir = dir;
@@ -537,6 +563,12 @@ fn ai_play(until: i32, print: bool, filename: Option<String>) -> Result<i32, std
 
   if !print {
     println!("Score: {}", board.game_score(fours));
+  }
+
+  channels.clear();
+  for thread in threads {
+    let result = thread.join();
+    assert!(!result.is_err());
   }
 
   Ok(board.game_score(fours))
