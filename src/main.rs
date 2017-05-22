@@ -467,6 +467,7 @@ fn ai_play(until: i32, print: bool, filename: Option<String>) -> Result<i32, std
     let (task_tx, task_rx) = channel::<(Board, u8)>();
 
     threads.push(thread::spawn(move || {
+      let mut hash = HashMap::new();
       for (board, depth) in task_rx {
         let new_board = board.slide(thread_dir);
         if new_board == board {
@@ -474,7 +475,7 @@ fn ai_play(until: i32, print: bool, filename: Option<String>) -> Result<i32, std
           continue;
         }
 
-        let mut hash = HashMap::new();
+        hash.clear();
         let (exp, end_prob) = ai_comp_move(new_board, depth, &mut hash, 1f32);
 
         thread_res.send((thread_dir, exp, end_prob)).unwrap();
