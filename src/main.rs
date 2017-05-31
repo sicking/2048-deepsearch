@@ -1,16 +1,17 @@
 extern crate rand;
 extern crate getch;
 extern crate byteorder;
+extern crate getopts;
 
 use std::time::Instant;
 use std::collections::HashMap;
-use std::str::FromStr;
 use byteorder::{NativeEndian, WriteBytesExt, ReadBytesExt};
 use std::fs::File;
 use std::io::BufWriter;
 use std::result::Result;
 use std::thread;
 use std::sync::mpsc::channel;
+use getopts::Options;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 struct Board(u64);
@@ -373,7 +374,7 @@ struct GameState {
   searches: u8,
 }
 
-fn replay(filename: String) -> Result<(), std::io::Error> {
+fn replay(filename: &str) -> Result<(), std::io::Error> {
 
   let mut states: Vec<GameState>;
 
@@ -446,7 +447,7 @@ fn replay(filename: String) -> Result<(), std::io::Error> {
   Ok(())
 }
 
-fn ai_play(until: i32, print: bool, filename: Option<String>) -> Result<i32, std::io::Error> {
+fn ai_play(until: i32, print: bool, filename: Option<&String>) -> Result<i32, std::io::Error> {
   let mut board = Board(0);
   let mut fours = 0;
   fours += board.comp_move();
@@ -497,10 +498,6 @@ fn ai_play(until: i32, print: bool, filename: Option<String>) -> Result<i32, std
       board.print(fours);
     }
 
-    if until > 0 && board.max_val() >= until {
-      break;
-    }
-
     let mut bestdir = -1;
     let mut searched_depth = 0;
     let mut bestexp = 0f32;
@@ -541,7 +538,9 @@ fn ai_play(until: i32, print: bool, filename: Option<String>) -> Result<i32, std
 
       state = PlayState::from_prob(best_end_prob);
 
-      print!("Death prob: {:.9}, Depth: {} State: {:?}          \n\x1b[1A", best_end_prob, depth, state);
+      if print {
+        print!("Death prob: {:.9}, Depth: {} State: {:?}          \n\x1b[1A", best_end_prob, depth, state);
+      }
     }
 
     if let Some(ref mut f) = file.as_mut() {
@@ -554,7 +553,8 @@ fn ai_play(until: i32, print: bool, filename: Option<String>) -> Result<i32, std
       f.write_u8(searches as u8)?;
     }
 
-    if bestdir == -1 {
+    if (until > 0 && board.max_val() >= until) ||
+       bestdir == -1 {
       break;
     }
 
@@ -564,6 +564,8 @@ fn ai_play(until: i32, print: bool, filename: Option<String>) -> Result<i32, std
 
   if !print {
     println!("Score: {}", board.game_score(fours));
+  } else {
+    println!();
   }
 
   channels.clear();
@@ -621,38 +623,89 @@ fn rng(max: i32) -> i32 {
   (x % (max as u32)) as i32
 }
 
-fn ai_play_multi_games(n: i32) -> Result<(), std::io::Error> {
-  let now = Instant::now();
-  let mut tot_score = 0;
-  for _ in 0..n {
-    let score = ai_play(-1, false, None)?;
-    tot_score += score;
-  }
-
-  let elapsed = now.elapsed();
-
-  println!("Average score: {}, time: {}", (tot_score as f32) / (n as f32),
-             elapsed.as_secs() as f64 + (elapsed.subsec_nanos() as f64) / 1_000_000_000f64);
-  Ok(())
+enum Command {
+  AI { file: Option<String>, number: i32, until: i32 },
+  Help(String, Option<String>),
+  Manual,
+  Replay(String),
 }
 
-fn ai_play_until(until: i32) -> Result<(), std::io::Error> {
-  let now = Instant::now();
-  ai_play(until, true, Some("game.2048".to_string()))?;
-  let elapsed = now.elapsed();
+fn parse_options(args: &[String]) -> Command
+{
+  let mut opts = Options::new();
+  opts.optflag("h", "help", "Print this message.");
+  opts.optopt("m", "max-tile", "Maximum tile value. Stop game once a tile with a value of 2^<number> has been reached.", "number");
+  opts.optopt("n", "number", "Number of games to play.", "number");
+  opts.optopt("f", "file", "File to save replay in. If multiple games are played, a counter is added at the end of each file name.", "FILE");
 
-  println!("Time: {}",
-             elapsed.as_secs() as f64 + (elapsed.subsec_nanos() as f64) / 1_000_000_000f64);  
-  Ok(())
+  let brief = format!("Usage: {0} [options]\n       {0} replay FILE\n       {0} manual", args[0]);
+  let options_str = opts.usage(&brief);
+
+  let matches = match opts.parse(&args[1..]) {
+    Ok(m) => { m }
+    Err(e) => { return Command::Help(options_str, Some(format!("{}", e))); }
+  };
+
+  if matches.free.first() == Some(&"replay".to_string()) &&
+     matches.free.len() == 2 {
+    return Command::Replay(matches.free[1].clone());
+  } else if matches.free.first() == Some(&"manual".to_string()) &&
+     matches.free.len() == 1 {
+    return Command::Manual;
+  } else if !matches.free.is_empty() {
+    return Command::Help(options_str, Some(format!("Unknown argument: {}", matches.free[0])));
+  }
+
+  if matches.opt_present("h") {
+    return Command::Help(options_str, None);
+  }
+
+  let max_tile = matches.opt_str("m").map_or(-1, |max_str|
+    max_str.parse::<i32>().unwrap()
+  );
+
+  let file = matches.opt_str("f");
+
+  let num_games = matches.opt_str("n").map_or(1, |num_str|
+    num_str.parse::<i32>().unwrap()
+  );
+
+  Command::AI{ file, number: num_games, until: max_tile }
 }
 
 fn main() {
   init_score_table();
 
-  match std::env::args().nth(1).unwrap_or("".to_string()).as_ref() {
-    "manual" => play_manual().unwrap(),
-    "until" => ai_play_until(i32::from_str(&std::env::args().nth(2).unwrap()).unwrap()).unwrap(),
-    "replay" => replay("game.2048".to_string()).unwrap(),
-    _ => ai_play_multi_games(std::env::args().nth(1).map(|s| i32::from_str(&s).unwrap()).unwrap_or(10)).unwrap(),
+  let args: Vec<String> = std::env::args().collect();
+
+  match parse_options(&args) {
+    Command::Help(options_str, err) => {
+      if let Some(err_str) = err {
+        println!("{}", err_str);
+      }
+      println!("{}", options_str);
+    }
+    Command::Replay(file) => {
+      replay(&file).unwrap();
+    }
+    Command::Manual => {
+      play_manual().unwrap();
+    }
+    Command::AI{ file, number, until } => {
+      let now = Instant::now();
+      let mut tot_score = 0;
+      for _ in 0..number {
+        tot_score += ai_play(until, number == 1, file.as_ref()).unwrap();
+      }
+      let elapsed = now.elapsed();
+
+      let time_sec = elapsed.as_secs() as f64 + (elapsed.subsec_nanos() as f64) / 1_000_000_000f64;
+
+      if number == 1 {
+        println!("Time: {}", time_sec);  
+      } else {
+        println!("Average score: {}, time: {}", (tot_score as f32) / (number as f32), time_sec);
+      }
+    }
   }
 }

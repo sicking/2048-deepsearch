@@ -7,5 +7,6 @@ authors = ["Jonas Sicking <jonas@sicking.cc>"]
 rand = "0.3"
 getch = "0.1.1"
 byteorder = "1.0.0"
+getopts = "0.2"
 
 [features]
