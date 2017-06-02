@@ -491,7 +491,8 @@ fn replay(filename: &str) -> Result<(), std::io::Error> {
 
   {
     let mut extra_searches = 0;
-    let mut death_total = 0f32;
+    let mut death_sum = 0f32;
+    let mut life_prob = 1f64;
     let mut f = File::open(filename)?;
     let n = f.metadata()?.len() / 23;
     states = Vec::with_capacity(n as usize);
@@ -506,12 +507,16 @@ fn replay(filename: &str) -> Result<(), std::io::Error> {
                     searches: f.read_u8()?,
                   });
       extra_searches += states.last().unwrap().searches - 1;
-      death_total += states.last().unwrap().best_end_prob;
+      if states.last().unwrap().best_end_prob != 1.0 {
+        death_sum += states.last().unwrap().best_end_prob;
+        life_prob *= 1.0 - (states.last().unwrap().best_end_prob as f64);
+      }
     }
 
     println!("Total moves: {}", n);
     println!("Redone searches: {}", extra_searches);
-    println!("Death probability sum: {}", death_total);
+    println!("Death probability sum: {}", death_sum);
+    println!("Death probability: {}", 1.0 - life_prob);
   }
 
   let io = getch::Getch::new()?;
