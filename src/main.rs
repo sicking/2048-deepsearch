@@ -14,6 +14,7 @@ use std::result::Result;
 use getopts::Options;
 use futures::Future;
 use futures_cpupool::CpuPool;
+use std::cell::RefCell;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 struct Board(u64);
@@ -449,6 +450,8 @@ fn replay(filename: &str) -> Result<(), std::io::Error> {
   Ok(())
 }
 
+thread_local!(static HASH: RefCell<HashMap<Board, (i32, f32, f32)>> = RefCell::new(HashMap::new()));
+
 fn ai_play(until: i32, print: bool, filename: Option<&String>) -> Result<i32, std::io::Error> {
   let mut board = Board(0);
   let mut fours = 0;
@@ -501,8 +504,11 @@ fn ai_play(until: i32, print: bool, filename: Option<&String>) -> Result<i32, st
           if new_board == board {
             Ok((-1.0f32, 1.0f32))
           } else {
-            let mut hash = HashMap::new();
-            Ok(ai_comp_move(new_board, depth, &mut hash, 1f32))
+            HASH.with(|hash_cell| {
+              let mut hash = hash_cell.borrow_mut();
+              hash.clear();
+              Ok(ai_comp_move(new_board, depth, &mut *hash, 1f32))
+            })
           }
         })
       })).wait().unwrap();
