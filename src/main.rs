@@ -16,6 +16,172 @@ use futures::Future;
 use futures_cpupool::CpuPool;
 use std::cell::RefCell;
 
+thread_local!(static HASH: RefCell<HashMap<Board, (i32, f32, f32)>> = RefCell::new(HashMap::new()));
+
+fn ai_play(until: i32, print: bool, filename: Option<&String>) -> Result<i32, std::io::Error> {
+  let mut board = Board(0);
+  let mut fours = 0;
+  fours += board.comp_move();
+  fours += board.comp_move();
+
+  let mut file = None;
+  if let Some(fname) = filename {
+    file = Some(BufWriter::new(File::create(fname)?));
+  }
+
+  let pool = CpuPool::new_num_cpus();
+
+  if print {
+    Board::print_spacing();
+  }
+
+
+  let mut state = PlayState::ZeroProbDeath;
+
+  loop {
+    if print {
+      board.print(fours);
+    }
+
+    let mut bestdir = -1;
+    let mut searched_depth = 0;
+    let mut bestexp = 0f32;
+    let mut best_end_prob = 1f32;
+    let mut depth: u8;
+
+    let mut searches = 0;
+
+    while {
+      depth = match state {
+        PlayState::ZeroProbDeath => std::cmp::max(3, board.distinct() - 4),
+        PlayState::LowProbDeath => std::cmp::max(3, board.distinct() - 2),
+        PlayState::HighPropDeath => std::cmp::max(3, board.distinct()),
+        PlayState::VeryHighProbDeath => 17,
+      };
+      depth > searched_depth } {
+
+      bestdir = -1;
+      bestexp = 0.0;
+      best_end_prob = 1.0;
+
+      let res = futures::future::join_all((0..4).map(|dir| {
+        pool.spawn_fn(move || -> Result<(f32, f32), ()> {
+          let new_board = board.slide(dir);
+          if new_board == board {
+            Ok((-1.0f32, 1.0f32))
+          } else {
+            HASH.with(|hash_cell| {
+              let mut hash = hash_cell.borrow_mut();
+              hash.clear();
+              Ok(ai_comp_move(new_board, depth, &mut *hash, 1f32))
+            })
+          }
+        })
+      })).wait().unwrap();
+
+      for (dir, &(exp, end_prob)) in res.iter().enumerate() {
+        if exp > bestexp {
+          bestexp = exp;
+          bestdir = dir as i32;
+          best_end_prob = end_prob;
+        }
+      }
+
+      searched_depth = depth;
+      searches += 1;
+
+      state = PlayState::from_prob(best_end_prob);
+
+      if print {
+        print!("Death prob: {:.9}, Depth: {} State: {:?}          \n\x1b[1A", best_end_prob, depth, state);
+      }
+    }
+
+    if let Some(ref mut f) = file.as_mut() {
+      f.write_u64::<NativeEndian>(board.0)?;
+      f.write_i32::<NativeEndian>(fours)?;
+      f.write_f32::<NativeEndian>(bestexp)?;
+      f.write_f32::<NativeEndian>(best_end_prob)?;
+      f.write_i8(bestdir as i8)?;
+      f.write_u8(searched_depth as u8)?;
+      f.write_u8(searches as u8)?;
+    }
+
+    if (until > 0 && board.max_val() >= until) ||
+       bestdir == -1 {
+      break;
+    }
+
+    board = board.slide(bestdir);
+    fours += board.comp_move();
+  }
+
+  if !print {
+    println!("Score: {}", board.game_score(fours));
+  } else {
+    println!();
+  }
+
+  Ok(board.game_score(fours))
+}
+
+fn ai_comp_move(board: Board, depth: u8, hash: &mut HashMap<Board, (i32, f32, f32)>, prob: f32) -> (f32, f32) {
+  if depth <= 0 || prob < 0.0001 {
+    return (board.score(), 0f32);
+  }
+
+  if let Some(entry) = hash.get(&board) {
+    let (hash_depth, score, end_prob) = *entry;
+    if hash_depth >= depth as i32 {
+      return (score, end_prob);
+    }
+  }
+
+  let empty = board.empty();
+  debug_assert!(empty != 0);
+
+  let prob1 = prob / (empty as f32) * 0.9;
+  let prob2 = prob / (empty as f32) * 0.1;
+
+  let mut score = 0f32;
+  let mut end_prob = 0f32;
+  for tile in 0..16 {
+    if board.get_tile(tile) == 0 {
+      let (move_score_1, move_end_prob_1) = ai_player_move(board.set_tile(tile, 1), depth, hash, prob1);
+      let (move_score_2, move_end_prob_2) = ai_player_move(board.set_tile(tile, 2), depth, hash, prob2);
+      score += move_score_1 * 0.9 + move_score_2 * 0.1;
+      end_prob += move_end_prob_1 * 0.9 + move_end_prob_2 * 0.1;
+    }
+  }
+
+  score /= empty as f32;
+  end_prob /= empty as f32;
+
+  hash.insert(board, (depth as i32, score, end_prob));
+
+  (score, end_prob)
+}
+
+fn ai_player_move(board: Board, depth: u8, hash: &mut HashMap<Board, (i32, f32, f32)>, prob: f32)  -> (f32, f32) {
+  let mut score = 0f32;
+  let mut end_prob = 1f32;
+
+  for dir in 0..4 {
+    let new_board = board.slide(dir);
+    if new_board == board {
+      continue;
+    }
+
+    let (move_score, move_end_prob) = ai_comp_move(new_board, depth - 1, hash, prob);
+    if move_score > score {
+      score = move_score;
+      end_prob = move_end_prob;
+    }
+  }
+
+  (score, end_prob)
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 struct Board(u64);
 
@@ -194,64 +360,28 @@ impl Board {
       SCORE_TABLE.get_unchecked(((trans.0 >> 48) & 0xffff) as usize)
     }
   }
-
 }
 
-fn ai_comp_move(board: Board, depth: u8, hash: &mut HashMap<Board, (i32, f32, f32)>, prob: f32) -> (f32, f32) {
-  if depth <= 0 || prob < 0.0001 {
-    return (board.score(), 0f32);
-  }
-
-  if let Some(entry) = hash.get(&board) {
-    let (hash_depth, score, end_prob) = *entry;
-    if hash_depth >= depth as i32 {
-      return (score, end_prob);
-    }
-  }
-
-  let empty = board.empty();
-  debug_assert!(empty != 0);
-
-  let prob1 = prob / (empty as f32) * 0.9;
-  let prob2 = prob / (empty as f32) * 0.1;
-
-  let mut score = 0f32;
-  let mut end_prob = 0f32;
-  for tile in 0..16 {
-    if board.get_tile(tile) == 0 {
-      let (move_score_1, move_end_prob_1) = ai_player_move(board.set_tile(tile, 1), depth, hash, prob1);
-      let (move_score_2, move_end_prob_2) = ai_player_move(board.set_tile(tile, 2), depth, hash, prob2);
-      score += move_score_1 * 0.9 + move_score_2 * 0.1;
-      end_prob += move_end_prob_1 * 0.9 + move_end_prob_2 * 0.1;
-    }
-  }
-
-  score /= empty as f32;
-  end_prob /= empty as f32;
-
-  hash.insert(board, (depth as i32, score, end_prob));
-
-  (score, end_prob)
+#[derive(Debug)]
+enum PlayState {
+  ZeroProbDeath,
+  LowProbDeath,
+  HighPropDeath,
+  VeryHighProbDeath,
 }
 
-fn ai_player_move(board: Board, depth: u8, hash: &mut HashMap<Board, (i32, f32, f32)>, prob: f32)  -> (f32, f32) {
-  let mut score = 0f32;
-  let mut end_prob = 1f32;
-
-  for dir in 0..4 {
-    let new_board = board.slide(dir);
-    if new_board == board {
-      continue;
-    }
-
-    let (move_score, move_end_prob) = ai_comp_move(new_board, depth - 1, hash, prob);
-    if move_score > score {
-      score = move_score;
-      end_prob = move_end_prob;
+impl PlayState {
+  fn from_prob(prob: f32) -> PlayState {
+    if prob > 0.05 {
+      PlayState::VeryHighProbDeath
+    } else if prob > 0.001 {
+      PlayState::HighPropDeath
+    } else if prob > 0.0 {
+      PlayState::LowProbDeath
+    } else {
+      PlayState::ZeroProbDeath
     }
   }
-
-  (score, end_prob)
 }
 
 const SCORE_LOST_PENALTY : f32 = 200000.0f32;
@@ -345,39 +475,17 @@ fn init_score_table() {
   }
 }
 
-#[derive(Debug)]
-enum PlayState {
-  ZeroProbDeath,
-  LowProbDeath,
-  HighPropDeath,
-  VeryHighProbDeath,
-}
-
-impl PlayState {
-  fn from_prob(prob: f32) -> PlayState {
-    if prob > 0.05 {
-      PlayState::VeryHighProbDeath
-    } else if prob > 0.001 {
-      PlayState::HighPropDeath
-    } else if prob > 0.0 {
-      PlayState::LowProbDeath
-    } else {
-      PlayState::ZeroProbDeath
-    }
-  }
-}
-
-struct GameState {
-  board: Board,
-  fours: i32,
-  bestexp: f32,
-  best_end_prob: f32,
-  bestdir: i8,
-  depth: u8,
-  searches: u8,
-}
-
 fn replay(filename: &str) -> Result<(), std::io::Error> {
+
+  struct GameState {
+    board: Board,
+    fours: i32,
+    bestexp: f32,
+    best_end_prob: f32,
+    bestdir: i8,
+    depth: u8,
+    searches: u8,
+  }
 
   let mut states: Vec<GameState>;
 
@@ -405,7 +513,6 @@ fn replay(filename: &str) -> Result<(), std::io::Error> {
     println!("Redone searches: {}", extra_searches);
     println!("Death probability sum: {}", death_total);
   }
-
 
   let io = getch::Getch::new()?;
 
@@ -448,115 +555,6 @@ fn replay(filename: &str) -> Result<(), std::io::Error> {
   }
 
   Ok(())
-}
-
-thread_local!(static HASH: RefCell<HashMap<Board, (i32, f32, f32)>> = RefCell::new(HashMap::new()));
-
-fn ai_play(until: i32, print: bool, filename: Option<&String>) -> Result<i32, std::io::Error> {
-  let mut board = Board(0);
-  let mut fours = 0;
-  fours += board.comp_move();
-  fours += board.comp_move();
-
-  let mut file = None;
-  if let Some(fname) = filename {
-    file = Some(BufWriter::new(File::create(fname)?));
-  }
-
-  let pool = CpuPool::new_num_cpus();
-
-  if print {
-    Board::print_spacing();
-  }
-
-
-  let mut state = PlayState::ZeroProbDeath;
-
-  loop {
-    if print {
-      board.print(fours);
-    }
-
-    let mut bestdir = -1;
-    let mut searched_depth = 0;
-    let mut bestexp = 0f32;
-    let mut best_end_prob = 1f32;
-    let mut depth: u8;
-
-    let mut searches = 0;
-
-    while {
-      depth = match state {
-        PlayState::ZeroProbDeath => std::cmp::max(3, board.distinct() - 4),
-        PlayState::LowProbDeath => std::cmp::max(3, board.distinct() - 2),
-        PlayState::HighPropDeath => std::cmp::max(3, board.distinct()),
-        PlayState::VeryHighProbDeath => 17,
-      };
-      depth > searched_depth } {
-
-      bestdir = -1;
-      bestexp = 0.0;
-      best_end_prob = 1.0;
-
-      let res = futures::future::join_all((0..4).map(|dir| {
-        pool.spawn_fn(move || -> Result<(f32, f32), ()> {
-          let new_board = board.slide(dir);
-          if new_board == board {
-            Ok((-1.0f32, 1.0f32))
-          } else {
-            HASH.with(|hash_cell| {
-              let mut hash = hash_cell.borrow_mut();
-              hash.clear();
-              Ok(ai_comp_move(new_board, depth, &mut *hash, 1f32))
-            })
-          }
-        })
-      })).wait().unwrap();
-
-      for (dir, &(exp, end_prob)) in res.iter().enumerate() {
-        if exp > bestexp {
-          bestexp = exp;
-          bestdir = dir as i32;
-          best_end_prob = end_prob;
-        }
-      }
-
-      searched_depth = depth;
-      searches += 1;
-
-      state = PlayState::from_prob(best_end_prob);
-
-      if print {
-        print!("Death prob: {:.9}, Depth: {} State: {:?}          \n\x1b[1A", best_end_prob, depth, state);
-      }
-    }
-
-    if let Some(ref mut f) = file.as_mut() {
-      f.write_u64::<NativeEndian>(board.0)?;
-      f.write_i32::<NativeEndian>(fours)?;
-      f.write_f32::<NativeEndian>(bestexp)?;
-      f.write_f32::<NativeEndian>(best_end_prob)?;
-      f.write_i8(bestdir as i8)?;
-      f.write_u8(searched_depth as u8)?;
-      f.write_u8(searches as u8)?;
-    }
-
-    if (until > 0 && board.max_val() >= until) ||
-       bestdir == -1 {
-      break;
-    }
-
-    board = board.slide(bestdir);
-    fours += board.comp_move();
-  }
-
-  if !print {
-    println!("Score: {}", board.game_score(fours));
-  } else {
-    println!();
-  }
-
-  Ok(board.game_score(fours))
 }
 
 fn play_manual() -> Result<(), std::io::Error> {
