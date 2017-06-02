@@ -2,6 +2,8 @@ extern crate rand;
 extern crate getch;
 extern crate byteorder;
 extern crate getopts;
+extern crate futures;
+extern crate futures_cpupool;
 
 use std::time::Instant;
 use std::collections::HashMap;
@@ -9,9 +11,9 @@ use byteorder::{NativeEndian, WriteBytesExt, ReadBytesExt};
 use std::fs::File;
 use std::io::BufWriter;
 use std::result::Result;
-use std::thread;
-use std::sync::mpsc::channel;
 use getopts::Options;
+use futures::Future;
+use futures_cpupool::CpuPool;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 struct Board(u64);
@@ -458,33 +460,7 @@ fn ai_play(until: i32, print: bool, filename: Option<&String>) -> Result<i32, st
     file = Some(BufWriter::new(File::create(fname)?));
   }
 
-  let (res_tx, res_rx) = channel::<(i32, f32, f32)>();
-
-  let mut threads = Vec::new();
-  let mut channels = Vec::new();
-
-  for thread_dir in 0..4 {
-    let thread_res = res_tx.clone();
-    let (task_tx, task_rx) = channel::<(Board, u8)>();
-
-    threads.push(thread::spawn(move || {
-      let mut hash = HashMap::new();
-      for (board, depth) in task_rx {
-        let new_board = board.slide(thread_dir);
-        if new_board == board {
-          thread_res.send((thread_dir, -1.0, 1.0)).unwrap();
-          continue;
-        }
-
-        hash.clear();
-        let (exp, end_prob) = ai_comp_move(new_board, depth, &mut hash, 1f32);
-
-        thread_res.send((thread_dir, exp, end_prob)).unwrap();
-      }
-    }));
-
-    channels.push(task_tx);
-  }
+  let pool = CpuPool::new_num_cpus();
 
   if print {
     Board::print_spacing();
@@ -519,16 +495,22 @@ fn ai_play(until: i32, print: bool, filename: Option<&String>) -> Result<i32, st
       bestexp = 0.0;
       best_end_prob = 1.0;
 
-      for dir in 0..4 {
-        channels[dir].send((board, depth)).unwrap();
-      }
+      let res = futures::future::join_all((0..4).map(|dir| {
+        pool.spawn_fn(move || -> Result<(f32, f32), ()> {
+          let new_board = board.slide(dir);
+          if new_board == board {
+            Ok((-1.0f32, 1.0f32))
+          } else {
+            let mut hash = HashMap::new();
+            Ok(ai_comp_move(new_board, depth, &mut hash, 1f32))
+          }
+        })
+      })).wait().unwrap();
 
-      for _ in 0..4 {
-        let (dir, exp, end_prob) = res_rx.recv().unwrap();
-
+      for (dir, &(exp, end_prob)) in res.iter().enumerate() {
         if exp > bestexp {
           bestexp = exp;
-          bestdir = dir;
+          bestdir = dir as i32;
           best_end_prob = end_prob;
         }
       }
@@ -566,12 +548,6 @@ fn ai_play(until: i32, print: bool, filename: Option<&String>) -> Result<i32, st
     println!("Score: {}", board.game_score(fours));
   } else {
     println!();
-  }
-
-  channels.clear();
-  for thread in threads {
-    let result = thread.join();
-    assert!(!result.is_err());
   }
 
   Ok(board.game_score(fours))
@@ -635,7 +611,7 @@ fn parse_options(args: &[String]) -> Command
   let mut opts = Options::new();
   opts.optflag("h", "help", "Print this message.");
   opts.optopt("m", "max-tile", "Maximum tile value. Stop game once a tile with a value of 2^<number> has been reached.", "number");
-  opts.optopt("n", "number", "Number of games to play.", "number");
+  opts.optopt("n", "number", "Number of games to play. Defaults to 1", "number");
   opts.optopt("f", "file", "File to save replay in. If multiple games are played, a counter is added at the end of each file name.", "FILE");
 
   let brief = format!("Usage: {0} [options]\n       {0} replay FILE\n       {0} manual", args[0]);
