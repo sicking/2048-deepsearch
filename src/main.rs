@@ -12,11 +12,12 @@ use std::fs::File;
 use std::io::BufWriter;
 use std::result::Result;
 use getopts::Options;
-use futures::Future;
+use futures::{Future, future};
 use futures_cpupool::CpuPool;
 use std::cell::RefCell;
+use std::cell::Cell;
 
-thread_local!(static HASH: RefCell<HashMap<Board, (i32, f32, f32)>> = RefCell::new(HashMap::new()));
+thread_local!(static HASH: (RefCell<HashMap<Board, (i32, f32, f32)>>, Cell<u32>) = (RefCell::new(HashMap::new()), Cell::new(0)));
 
 fn ai_play(until: i32, print: bool, filename: Option<&String>) -> Result<i32, std::io::Error> {
   let mut board = Board(0);
@@ -36,9 +37,12 @@ fn ai_play(until: i32, print: bool, filename: Option<&String>) -> Result<i32, st
   }
 
 
+  let mut gen = 0;
   let mut state = PlayState::ZeroProbDeath;
 
   loop {
+    gen += 1;
+
     if print {
       board.print(fours);
     }
@@ -64,22 +68,19 @@ fn ai_play(until: i32, print: bool, filename: Option<&String>) -> Result<i32, st
       bestexp = 0.0;
       best_end_prob = 1.0;
 
-      let res = futures::future::join_all((0..4).map(|dir| {
-        pool.spawn_fn(move || -> Result<(f32, f32), ()> {
-          let new_board = board.slide(dir);
-          if new_board == board {
-            Ok((-1.0f32, 1.0f32))
-          } else {
-            HASH.with(|hash_cell| {
-              let mut hash = hash_cell.borrow_mut();
-              hash.clear();
-              Ok(ai_comp_move(new_board, depth, &mut *hash, 1f32))
-            })
-          }
-        })
-      })).wait().unwrap();
+      let mut results = Vec::new();
+      for dir in 0..4 {
+        let new_board = board.slide(dir);
+        if new_board == board {
+          continue;
+        }
 
-      for (dir, &(exp, end_prob)) in res.iter().enumerate() {
+        results.push(async_ai_comp_move(&pool, gen, new_board, depth, 1f32).map(move |(exp, end_prob)| (dir, exp, end_prob)));
+      }
+
+      let res = future::join_all(results).wait().unwrap();
+
+      for (dir, exp, end_prob) in res {
         if exp > bestexp {
           bestexp = exp;
           bestdir = dir as i32;
@@ -123,6 +124,63 @@ fn ai_play(until: i32, print: bool, filename: Option<&String>) -> Result<i32, st
   }
 
   Ok(board.game_score(fours))
+}
+
+fn async_ai_comp_move(pool: &CpuPool, gen: u32, board: Board, depth: u8, prob: f32) -> future::BoxFuture<(f32, f32), ()> {
+
+  // Don't deal with this case since it'd be hard to return a Future of the right type
+  debug_assert!(depth > 0 && prob > 0.0001);
+
+  let empty = board.empty();
+  debug_assert!(empty != 0);
+
+  let prob1 = prob / (empty as f32) * 0.9;
+  let prob2 = prob / (empty as f32) * 0.1;
+
+  let mut futures = Vec::new();
+
+  for tile in 0..16 {
+    if board.get_tile(tile) == 0 {
+      futures.push(pool.spawn_fn(move || -> Result<(f32, f32), ()> {
+        HASH.with(|&(ref hash_cell, ref hash_gen)| {
+          let mut hash = hash_cell.borrow_mut();
+          // Only clear if we're processing a new move
+          if hash_gen.get() != gen {
+            hash.clear();
+            hash_gen.set(gen);
+          }
+          let (score, end_prob) = ai_player_move(board.set_tile(tile, 1), depth, &mut *hash, prob1);
+          Ok((score * 0.9, end_prob * 0.9))
+        })
+      }));
+      futures.push(pool.spawn_fn(move || -> Result<(f32, f32), ()> {
+        HASH.with(|&(ref hash_cell, ref hash_gen)| {
+          let mut hash = hash_cell.borrow_mut();
+          // Only clear if we're processing a new move
+          if hash_gen.get() != gen {
+            hash.clear();
+            hash_gen.set(gen);
+          }
+          let (score, end_prob) = ai_player_move(board.set_tile(tile, 2), depth, &mut *hash, prob2);
+          Ok((score * 0.1, end_prob * 0.1))
+        })
+      }));
+    }
+  }
+
+  future::join_all(futures).map(move |results| -> (f32, f32) {
+    let mut score = 0f32;
+    let mut end_prob = 0f32;
+
+    for (move_score, move_end_prob) in results {
+      score += move_score;
+      end_prob += move_end_prob;
+    }
+
+    score /= empty as f32;
+    end_prob /= empty as f32;
+    (score, end_prob)
+  }).boxed()
 }
 
 fn ai_comp_move(board: Board, depth: u8, hash: &mut HashMap<Board, (i32, f32, f32)>, prob: f32) -> (f32, f32) {
