@@ -1,6 +1,5 @@
 mod board;
 
-extern crate rand;
 extern crate getch;
 extern crate byteorder;
 extern crate getopts;
@@ -130,7 +129,7 @@ fn ai_play(until: i32, print: bool, filename: Option<&String>) -> Result<i32, st
 
 fn ai_comp_move(board: Board, depth: u8, hash: &mut HashMap<Board, (i32, f32, f32)>, prob: f32) -> (f32, f32) {
   if depth <= 0 || prob < 0.0001 {
-    return (board.score(), 0f32);
+    return (board.heur_score(), 0f32);
   }
 
   if let Some(entry) = hash.get(&board) {
@@ -186,7 +185,7 @@ fn ai_player_move(board: Board, depth: u8, hash: &mut HashMap<Board, (i32, f32, 
 }
 
 impl Board {
-  fn score(self) -> f32 {
+  fn heur_score(self) -> f32 {
     let trans = self.transpose();
     unsafe {
       SCORE_TABLE.get_unchecked(((self.0 >> 0) & 0xffff) as usize) +

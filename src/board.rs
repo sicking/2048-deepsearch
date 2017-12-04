@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 extern crate std;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]

@@ -4,7 +4,6 @@ version = "0.1.0"
 authors = ["Jonas Sicking <jonas@sicking.cc>"]
 
 [dependencies]
-rand = "0.3"
 getch = "0.1.1"
 byteorder = "1.0.0"
 getopts = "0.2"
@@ -16,3 +15,7 @@ futures-cpupool = "0.1.5"
 [[bin]]
 name = "expmax"
 path = "src/expmax.rs"
+
+[[bin]]
+name = "tdlearn"
+path = "src/tdlearn.rs"
