@@ -5,7 +5,9 @@ use board::Board;
 use movavg::MovAvg;
 
 const N_V_TABLES: usize = 17;
-const ALPHA: f32 = 0.005;
+const ALPHA: f32 = 0.0025;
+const EXPLORE_RATE: u32 = 1000;
+const N_GAMES_EXPLORE: usize = 150000;
 
 static mut V_TABLES : [[f32; 65536]; N_V_TABLES] = [[0f32; 65536]; N_V_TABLES];
 
@@ -70,7 +72,7 @@ fn main() {
       let mut bestvpos = [0; N_V_TABLES];
       let mut bestboard = Board(0);
 
-      let rand_move = rng(100) == 0;
+      let rand_move = n_games < N_GAMES_EXPLORE && rng(EXPLORE_RATE) == 0;
       if rand_move {
         let mut ndir = 0;
         let mut allowed_dirs = [0; 4];
