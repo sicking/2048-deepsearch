@@ -166,6 +166,117 @@ impl Board {
     let b3 = a      & 0x0000_0000_ff00_ff00_u64;
     Board(b1 | (b2 >> 24) | (b3 << 24))
   }
+
+  pub fn flip_horiz(self) -> Board {
+    let a1 = self.0 & 0xffff_0000_ffff_0000_u64; // 1030
+    let a2 = self.0 & 0x0000_ffff_0000_ffff_u64; // 0204
+    let a = a1 | a2.rotate_right(32);            // 1432
+    Board(a.rotate_left(16))                     // 4321
+  }
+
+  pub fn flip_vert(self) -> Board {
+    let a1 = self.0 & 0xf000_f000_f000_f000_u64;
+    let a2 = self.0 & 0x0f00_0f00_0f00_0f00_u64;
+    let a3 = self.0 & 0x00f0_00f0_00f0_00f0_u64;
+    let a4 = self.0 & 0x000f_000f_000f_000f_u64;
+    Board(a1 >> 12 | a2 >> 4 | a3 << 4 | a4 << 12)
+  }
+
+  pub fn symmetries(self) -> BoardSymIter {
+    BoardSymIter { op: 0, board: self }
+  }
+}
+
+pub struct BoardSymIter {
+  op: i32,
+  board: Board,
+}
+
+impl Iterator for BoardSymIter {
+  type Item = Board;
+  fn next(&mut self) -> Option<Board> {
+    // Might be simper to simply alternate calls to flip_horiz/transpose
+    if self.op % 2 == 1 {
+      self.board = self.board.flip_horiz();
+    } else if self.op == 2 || self.op == 6 {
+      self.board = self.board.flip_vert();
+    } else if self.op == 4 {
+      self.board = self.board.transpose();
+    } else if self.op == 8 {
+      return None;
+    }
+    self.op += 1;
+    return Some(self.board);
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn sliding() {
+    init();
+    assert_eq!(Board(0x0001_0001_0002_0003).slide_up(),
+               Board(0x0002_0002_0003_0000));
+    assert_eq!(Board(0x0001_0001_0002_0003).slide_down(),
+               Board(0x0000_0002_0002_0003));
+    assert_eq!(Board(0x0001_0020_0300_1000).slide_down(),
+               Board(0x0000_0000_0000_1321));
+    assert_eq!(Board(0x0001_0020_0300_1001).slide_up(),
+               Board(0x1322_0000_0000_0000));
+    assert_eq!(Board(0x0001_0022_0300_1001).slide_up(),
+               Board(0x1321_0002_0001_0000));
+    assert_eq!(Board(0x1111_0000_0000_0000).slide_right(),
+               Board(0x0022_0000_0000_0000));
+    assert_eq!(Board(0x2235_0000_0000_0000).slide_left(),
+               Board(0x3350_0000_0000_0000));
+    assert_eq!(Board(0xcbbc_0010_0600_8000).slide_right(),
+               Board(0x0ccc_0001_0006_0008));
+    assert_eq!(Board(0x5550_0333_aa0a_c0cc).slide_right(),
+               Board(0x0056_0034_00ab_00cd));
+    assert_eq!(Board(0x1110_0222_bb0b_e0ee).slide_left(),
+               Board(0x2100_3200_cb00_fe00));
+    assert_eq!(Board(0x530c_50ac_53a0_03ac).slide_up(),
+               Board(0x64bd_53ac_0000_0000));
+    assert_eq!(Board(0x02be_10be_12b0_120e).slide_down(),
+               Board(0x0000_0000_12be_23cf));
+  }
+
+  #[test]
+  fn flipping() {
+    init();
+    assert_eq!(Board(0x0001_0a01_0002_0003).flip_vert(),
+               Board(0x1000_10a0_2000_3000));
+    assert_eq!(Board(0x1234_5678_9abc_def0).flip_vert(),
+               Board(0x4321_8765_cba9_0fed));
+    assert_eq!(Board(0x1234_5678_9abc_def0).flip_horiz(),
+               Board(0xdef0_9abc_5678_1234));
+    assert_eq!(Board(0x0101_2233_feef_ddee).flip_horiz(),
+               Board(0xddee_feef_2233_0101));
+    assert_eq!(Board(0x1234_5678_9abc_def0).transpose(),
+               Board(0x159d_26ae_37bf_48c0));
+    assert_eq!(Board(0x100a_02b0_0c30_d004).transpose(),
+               Board(0x100d_02c0_0b30_a004));
+  }
+
+  #[test]
+  fn iter() {
+    init();
+    let mut ans = vec![Board(0x1234_0000_0000_0000),
+                       Board(0x1000_2000_3000_4000),
+                       Board(0x4321_0000_0000_0000),
+                       Board(0x0001_0002_0003_0004),
+                       Board(0x0000_0000_0000_4321),
+                       Board(0x0004_0003_0002_0001),
+                       Board(0x0000_0000_0000_1234),
+                       Board(0x4000_3000_2000_1000)];
+    for board in Board(0x1234_0000_0000_0000).symmetries() {
+      let pos = ans.iter().position(|x| *x == board);
+      ans.remove(pos.unwrap());
+    }
+    assert!(ans.is_empty());
+  }
 }
 
 static mut SLIDE_RIGHT_TABLE : [u16; 65536] = [0u16; 65536];
@@ -210,7 +321,6 @@ pub fn init() {
 }
 
 static mut SEED: u32 = 0x17004711;
-
 fn rng(max: i32) -> i32 {
   let mut x = unsafe { SEED };
   x ^= x << 13;
