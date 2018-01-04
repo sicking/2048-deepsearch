@@ -100,8 +100,8 @@ fn main() {
           }
 
           let vpos = newboard.vpos();
-          // Optimizing out subtracting pre_score since it applies to all directions.
-          let val = get_val(vpos) + newboard.game_score(0) as f32;
+          // Optimizing out adding 'r' since it's 1 for every direction.
+          let val = get_val(vpos);
           if val > bestval {
             bestval = val;
             bestvpos = vpos;
@@ -118,8 +118,7 @@ fn main() {
                           0.0
                         }
                         else {
-                          (bestboard.game_score(0) - board.game_score(0)) as f32 + // this is 'r'
-                            get_val(bestvpos)
+                          1.0 + get_val(bestvpos)
                         };
         let adjust = (exp_value - get_val(prev_vpos)) * ALPHA;
         prev_vpos.iter().zip(unsafe { V_TABLES.iter_mut() })
