@@ -46,9 +46,25 @@ impl Board {
   }
 }
 
+#[cfg(not(feature = "best-symmetry"))]
 fn get_val(board: Board) -> (VPos, f32) {
   let vpos = board.vpos();
   (vpos, vpos.iter().zip(unsafe { V_TABLES.iter() }).map(|(pos, table)| unsafe { table.get_unchecked(*pos as usize) }).sum())
+}
+
+#[cfg(feature = "best-symmetry")]
+fn get_val(board: Board) -> (VPos, f32) {
+  let mut bestvpos = [0; N_V_TABLES];
+  let mut bestval = std::f32::NEG_INFINITY;
+  for symm in board.symmetries() {
+    let vpos = symm.vpos();
+    let val = vpos.iter().zip(unsafe { V_TABLES.iter() }).map(|(pos, table)| unsafe { table.get_unchecked(*pos as usize) }).sum();
+    if val > bestval {
+      bestval = val;
+      bestvpos = vpos;
+    }
+  }
+  (bestvpos, bestval)
 }
 
 fn main() {
