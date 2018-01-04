@@ -46,8 +46,9 @@ impl Board {
   }
 }
 
-fn get_val(vpos: VPos) -> f32 {
-  vpos.iter().zip(unsafe { V_TABLES.iter() }).map(|(pos, table)| unsafe { table.get_unchecked(*pos as usize) }).sum()
+fn get_val(board: Board) -> (VPos, f32) {
+  let vpos = board.vpos();
+  (vpos, vpos.iter().zip(unsafe { V_TABLES.iter() }).map(|(pos, table)| unsafe { table.get_unchecked(*pos as usize) }).sum())
 }
 
 fn main() {
@@ -63,7 +64,7 @@ fn main() {
     n_games += 1;
     let mut board = Board(0);
     board.comp_move();
-    let mut prev_vpos = board.vpos();
+    let (mut prev_vpos, mut prev_val) = get_val(board);
 
     loop {
       board.comp_move();
@@ -71,6 +72,7 @@ fn main() {
       let mut bestdir = -1;
       let mut bestvpos = [0; N_V_TABLES];
       let mut bestboard = Board(0);
+      let mut bestval = std::f32::NEG_INFINITY;
 
       let rand_move = n_games < N_GAMES_EXPLORE && rng(EXPLORE_RATE) == 0;
       if rand_move {
@@ -88,20 +90,20 @@ fn main() {
         if ndir > 0 {
           bestdir = allowed_dirs[rng(ndir as u32) as usize];
           bestboard = board.slide(bestdir);
-          bestvpos = bestboard.vpos();
+          let (vpos, val) = get_val(bestboard);
+          bestvpos = vpos;
+          bestval = val;
         }
 
       } else {
-        let mut bestval = std::f32::NEG_INFINITY;
         for dir in 0..4 {
           let newboard = board.slide(dir);
           if newboard == board {
             continue;
           }
 
-          let vpos = newboard.vpos();
           // Optimizing out adding 'r' since it's 1 for every direction.
-          let val = get_val(vpos);
+          let (vpos, val) = get_val(newboard);
           if val > bestval {
             bestval = val;
             bestvpos = vpos;
@@ -113,14 +115,13 @@ fn main() {
 
       // Learn
       if !rand_move {
-        debug_assert!(bestdir == -1 || bestboard.game_score(0) >= board.game_score(0));
         let exp_value = if bestdir == -1 {
                           0.0
                         }
                         else {
-                          1.0 + get_val(bestvpos)
+                          1.0 + bestval
                         };
-        let adjust = (exp_value - get_val(prev_vpos)) * ALPHA;
+        let adjust = (exp_value - prev_val) * ALPHA;
         prev_vpos.iter().zip(unsafe { V_TABLES.iter_mut() })
                         .for_each(|(pos, table)| unsafe {
                           *table.get_unchecked_mut(*pos as usize) += adjust;
@@ -134,6 +135,7 @@ fn main() {
 
       // Execute best move
       prev_vpos = bestvpos;
+      prev_val = bestval;
       board = bestboard;
     }
 
