@@ -5,9 +5,10 @@ use board::Board;
 use movavg::MovAvg;
 
 const N_V_TABLES: usize = 17;
-const ALPHA: f32 = 0.0025;
-const EXPLORE_RATE: u32 = 1000;
-const N_GAMES_EXPLORE: usize = 150000;
+const ALPHA_START: f32 = 0.0025;
+const ALPHA_DECREASE: f32 = 5.0;
+const ALPHA_RATE: f32 = 300000.0;
+const EXPLORE_DECREASE_FACTOR: f32 = 2.0;
 
 static mut V_TABLES : [[f32; 65536]; N_V_TABLES] = [[0f32; 65536]; N_V_TABLES];
 
@@ -77,6 +78,7 @@ fn main() {
   avg_score.init(1000);
 
   loop {
+    let alpha = ALPHA_START / ALPHA_DECREASE.powf((n_games as f32) / ALPHA_RATE);
     n_games += 1;
     let mut board = Board(0);
     board.comp_move();
@@ -90,7 +92,7 @@ fn main() {
       let mut bestboard = Board(0);
       let mut bestval = std::f32::NEG_INFINITY;
 
-      let rand_move = n_games < N_GAMES_EXPLORE && rng(EXPLORE_RATE) == 0;
+      let rand_move = rng((n_games as f32 * EXPLORE_DECREASE_FACTOR) as u32) == 0;
       if rand_move {
         let mut ndir = 0;
         let mut allowed_dirs = [0; 4];
@@ -137,7 +139,7 @@ fn main() {
                         else {
                           1.0 + bestval
                         };
-        let adjust = (exp_value - prev_val) * ALPHA;
+        let adjust = (exp_value - prev_val) * alpha;
         prev_vpos.iter().zip(unsafe { V_TABLES.iter_mut() })
                         .for_each(|(pos, table)| unsafe {
                           *table.get_unchecked_mut(*pos as usize) += adjust;
@@ -160,7 +162,7 @@ fn main() {
     if (n_games % 2000) == 0 {
       print!("\x1b[2A");
       board.print(0);
-      println!("Avg score: {}", avg_score.avg());
+      println!("Avg score: {}  ", avg_score.avg());
       println!("Num games: {}", n_games);
     }
   }

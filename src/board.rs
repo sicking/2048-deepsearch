@@ -18,7 +18,7 @@ impl Board {
         print!("|\n+---+---+---+---+\n");
       }
     }
-    println!("Score: {}", self.game_score(fours));
+    println!("Score: {}  ", self.game_score(fours));
   }
 
   pub fn empty(self) -> i32 {
