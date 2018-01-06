@@ -8,7 +8,7 @@ const N_V_TABLES: usize = 17;
 const ALPHA_START: f32 = 0.0025;
 const ALPHA_DECREASE: f32 = 5.0;
 const ALPHA_RATE: f32 = 300000.0;
-const EXPLORE_DECREASE_FACTOR: f32 = 2.0;
+const EXPLORE_DECREASE_FACTOR: f32 = 1.0;
 
 static mut V_TABLES : [[f32; 65536]; N_V_TABLES] = [[0f32; 65536]; N_V_TABLES];
 
@@ -83,6 +83,7 @@ fn main() {
     let mut board = Board(0);
     board.comp_move();
     let (mut prev_vpos, mut prev_val) = get_val(board);
+    let explore = std::cmp::max(1, (n_games as f32 * EXPLORE_DECREASE_FACTOR) as u32);
 
     loop {
       board.comp_move();
@@ -92,7 +93,7 @@ fn main() {
       let mut bestboard = Board(0);
       let mut bestval = std::f32::NEG_INFINITY;
 
-      let rand_move = rng((n_games as f32 * EXPLORE_DECREASE_FACTOR) as u32) == 0;
+      let rand_move = rng(explore) == 0;
       if rand_move {
         let mut ndir = 0;
         let mut allowed_dirs = [0; 4];
