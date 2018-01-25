@@ -41,48 +41,59 @@ eval_arrays = [np.zeros((16, 1)),
                np.zeros((16, 2)),
                np.zeros((16, 3)),
                np.zeros((16, 4))]
-prev_arr = np.zeros((16, 1))
+
+m = 128
+prev_arr = np.zeros((16, m))
+prev_arr_next = np.zeros((16, m))
+boards = np.zeros(m, np.uint64)
+prev_exp_vals = np.zeros((1, m))
+
+for i in range(m):
+  boards[i] = Board.comp_move(0)
+  board_to_array(int(boards[i]), prev_arr, i)
 
 while True:
-  board = Board.comp_move(0)
-  board_to_array(board, prev_arr, 0)
-
-  while True:
-    board = Board.comp_move(board)
+  for i in range(m):
+    board = Board.comp_move(int(boards[i]))
 
     bestcol = None
     bestboard = None
 
-    boards = []
+    newboards = []
 
     for dir in range(4):
       newboard = Board.slide(board, dir)
       if newboard != board:
-        boards.append(newboard)
+        newboards.append(newboard)
 
-    if (len(boards)):
-      arr = eval_arrays[len(boards) - 1]
-      for i, newboard in enumerate(boards):
-        board_to_array(newboard, arr, i)
+    if (len(newboards)):
+      arr = eval_arrays[len(newboards) - 1]
+      for j, newboard in enumerate(newboards):
+        board_to_array(newboard, arr, j)
       vals = sess.run(yhat, feed_dict = { X_param: arr })[0]
       bestval = float("-inf")
-      for i, val in enumerate(vals):
+      for j, val in enumerate(vals):
         if val > bestval:
           bestval = val
-          bestcol = i
+          bestcol = j
           bestboard = newboard
 
     # learn
-    prev_exp_val = bestval + 1 if bestboard else 0
-    sess.run(optimizer, feed_dict = { X_param: prev_arr, Y_param: [[prev_exp_val]] })
+    prev_exp_vals[0][i] = bestval + 1 if bestboard else 0
 
     if bestboard == None:
-      break
+      Board.print(board)
+      bestboard = Board.comp_move(0)
+      newboards.append(bestboard)
+      bestcol = 0
+      board_to_array(bestboard, eval_arrays[0], 0)
 
-    np.copyto(prev_arr[:, 0], eval_arrays[len(boards) - 1][:, bestcol])
-    board = bestboard
+    np.copyto(prev_arr_next[:, i], eval_arrays[len(newboards) - 1][:, bestcol])
+    boards[i] = bestboard
 
-  Board.print(board)
+
+  sess.run(optimizer, feed_dict = { X_param: prev_arr, Y_param: prev_exp_vals })
+  prev_arr, prev_arr_next = prev_arr_next, prev_arr
 
 
 #sess.close()
