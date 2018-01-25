@@ -39,9 +39,11 @@ def _init():
 def print_spacing():
   builtins.print("\n\n\n\n\n\n\n\n\n\n\n\n\x1b[2A")
 
-def print(board):
+def print(board, overwrite=True):
   nums = ["   ", "  2", "  4", "  8", " 16", " 32", " 64", "128", "256", "512", " 1K", " 2K", " 4K", " 8K", "16K", "32K"]
-  builtins.print("\x1b[10A+---+---+---+---+")
+  if overwrite:
+    builtins.print("\x1b[10A", end='')
+  builtins.print("+---+---+---+---+")
   for n in range(16):
     builtins.print("|" + nums[get_tile(board, 15-n)], end='')
     if ((n % 4) == 3):
