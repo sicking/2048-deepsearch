@@ -1,14 +1,22 @@
 mod board;
 mod movavg;
 
+extern crate byteorder;
+
 use board::Board;
 use movavg::MovAvg;
+use byteorder::{LittleEndian, WriteBytesExt};
+use std::fs::File;
+use std::io::BufWriter;
 
 const N_V_TABLES: usize = 17;
 const ALPHA_START: f32 = 0.0025;
 const ALPHA_DECREASE: f32 = 5.0;
 const ALPHA_RATE: f32 = 300000.0;
 const EXPLORE_DECREASE_FACTOR: f32 = 1.0;
+
+const START_RECORDING_SCORE: i32 = 0; // 40_000
+const RECORD_N_MOVES: u32 = 10_000_000;
 
 static mut V_TABLES : [[f32; 65536]; N_V_TABLES] = [[0f32; 65536]; N_V_TABLES];
 
@@ -72,12 +80,21 @@ fn main() {
   board::init();
   Board::print_spacing();
   print!("\n\n");
-  let mut n_games = 0;
+  let mut n_games: u32 = 0;
 
   let mut avg_score = MovAvg::new();
   avg_score.init(1000);
 
+  let mut n_record = RECORD_N_MOVES;
+  let mut record_file = None;
+
   loop {
+    if START_RECORDING_SCORE != 0 && record_file.is_none() && avg_score.avg() > START_RECORDING_SCORE {
+      let mut file = BufWriter::new(File::create("2048training").unwrap());
+      file.write_u32::<LittleEndian>(RECORD_N_MOVES).unwrap();
+      record_file = Some(file);
+    }
+
     let alpha = ALPHA_START / ALPHA_DECREASE.powf((n_games as f32) / ALPHA_RATE);
     n_games += 1;
     let mut board = Board(0);
@@ -140,6 +157,15 @@ fn main() {
                         else {
                           1.0 + bestval
                         };
+        if let Some(ref mut file) = record_file {
+          file.write_u64::<LittleEndian>(board.0).unwrap();
+          file.write_f32::<LittleEndian>(exp_value).unwrap();
+          n_record -= 1;
+          if n_record == 0 {
+            return;
+          }
+        }
+
         let adjust = (exp_value - prev_val) * alpha;
         prev_vpos.iter().zip(unsafe { V_TABLES.iter_mut() })
                         .for_each(|(pos, table)| unsafe {
@@ -160,6 +186,7 @@ fn main() {
 
     avg_score.add(board.game_score(0));
     avg_score.drop();
+
     if (n_games % 2000) == 0 {
       print!("\x1b[2A");
       board.print(0);
