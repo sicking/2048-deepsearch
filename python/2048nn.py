@@ -65,7 +65,7 @@ eval_arrays = [np.zeros((16, 1)),
                np.zeros((16, 3)),
                np.zeros((16, 4))]
 
-with open('2048training', 'rb') as f:
+with open('../rust/2048training', 'rb') as f:
   m_train = struct.unpack('<L', f.read(4))[0]
   X_train = np.zeros((16, m_train))
   Y_train = np.zeros((1, m_train))
