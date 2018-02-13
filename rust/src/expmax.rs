@@ -33,18 +33,9 @@ fn ai_play(until: i32, print: bool, filename: Option<&String>) -> Result<i32, st
 
   let pool = CpuPool::new_num_cpus();
 
-  if print {
-    Board::print_spacing();
-  }
-
-
   let mut state = PlayState::ZeroProbDeath;
 
   loop {
-    if print {
-      board.print(fours);
-    }
-
     let mut bestdir = -1;
     let mut searched_depth = 0;
     let mut bestexp = 0f32;
@@ -93,10 +84,11 @@ fn ai_play(until: i32, print: bool, filename: Option<&String>) -> Result<i32, st
       searches += 1;
 
       state = PlayState::from_prob(best_end_prob);
+    }
 
-      if print {
-        print!("Death prob: {:.9}, Depth: {} State: {:?}          \n\x1b[1A", best_end_prob, depth, state);
-      }
+    if print {
+      board.print(fours, true,
+                  &format!("Death prob: {:.9}\nDepth: {} State: {:?}          \n", best_end_prob, depth, state));
     }
 
     if let Some(ref mut f) = file.as_mut() {
@@ -120,8 +112,6 @@ fn ai_play(until: i32, print: bool, filename: Option<&String>) -> Result<i32, st
 
   if !print {
     println!("Score: {}", board.game_score(fours));
-  } else {
-    println!();
   }
 
   Ok(board.game_score(fours))
@@ -332,25 +322,28 @@ fn replay(filename: &str) -> Result<(), std::io::Error> {
 
   let mut pos: isize = 0;
 
-  Board::print_spacing();
-  print!("\n\n\n\n\n\n");
-
   loop {
     let state = &states[pos as usize];
 
-    print!("\x1b[6A");
-    state.board.print(state.fours);
-    println!("Move: {}      ", pos);
-    println!("Expected heuristic score: {:.2}      ", state.bestexp);
-    println!("Probability of death: {:.9} ({:?})       ", state.best_end_prob, PlayState::from_prob(state.best_end_prob));
-    println!("Searched depth: {}  ", state.depth);
-    println!("Number of searches: {}  ", state.searches);
-    if state.bestdir == -1 {
-      println!("End of game.         ");
-    } else {
-      assert!(state.bestdir <= 3);
-      println!("Decided direction: {}", "RDLU".chars().nth(state.bestdir as usize).unwrap());
-    }
+    state.board.print(state.fours, true,
+                      &format!("Move: {}      \n\
+                                Expected heuristic score: {:.2}      \n\
+                                Probability of death: {:.9} ({:?})       \n\
+                                Searched depth: {}  \n\
+                                Number of searches: {}  \n\
+                                {}\n",
+                                pos,
+                                state.bestexp,
+                                state.best_end_prob, PlayState::from_prob(state.best_end_prob),
+                                state.depth,
+                                state.searches,
+                                if state.bestdir == -1 {
+                                  format!("End of game.         ")
+                                } else {
+                                  assert!(state.bestdir <= 3);
+                                  format!("Decided direction: {}", "RDLU".chars().nth(state.bestdir as usize).unwrap())
+                                }
+                                ));
 
     pos += match io.getch()? as char {
       'q' => break,
@@ -372,8 +365,6 @@ fn replay(filename: &str) -> Result<(), std::io::Error> {
 }
 
 fn play_manual() -> Result<(), std::io::Error> {
-  Board::print_spacing();
-
   let mut board = Board(0);
 
   let mut fours = 0;
@@ -383,7 +374,7 @@ fn play_manual() -> Result<(), std::io::Error> {
   let io = getch::Getch::new()?;
 
   loop {
-    board.print(fours);
+    board.print(fours, true, "");
 
     let new_board;
     match io.getch()? as char {

@@ -5,13 +5,15 @@ extern crate std;
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Board(pub u64);
 
+static mut PRINTED_LINES : usize = 0;
+
 impl Board {
-  pub fn print_spacing() {
-    print!("\n\n\n\n\n\n\n\n\n\n\n\n\x1b[2A");
-  }
-  pub fn print(self, fours: i32) {
+  pub fn print(self, fours: i32, backtrack: bool, extra: &str) {
     let nums = ["   ", "  2", "  4", "  8", " 16", " 32", " 64", "128", "256", "512", " 1K", " 2K", " 4K", " 8K", "16K", "32K"];
-    print!("\x1b[10A+---+---+---+---+\n");
+    if backtrack && unsafe { PRINTED_LINES != 0 } {
+      print!("\x1b[{}A", unsafe { PRINTED_LINES });
+    }
+    print!("+---+---+---+---+\n");
     for n in 0..16 {
       print!("|{}", nums[self.get_tile(15-n) as usize]);
       if (n % 4) == 3 {
@@ -19,6 +21,14 @@ impl Board {
       }
     }
     println!("Score: {}  ", self.game_score(fours));
+    let mut lines = 10;
+    if extra.len() != 0 {
+      print!("{}", extra);
+      if backtrack {
+        lines += extra.lines().count();
+      }
+    }
+    unsafe { PRINTED_LINES = if backtrack { lines } else { 0 } };
   }
 
   pub fn empty(self) -> i32 {

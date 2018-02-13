@@ -78,8 +78,6 @@ fn get_val(board: Board) -> (VPos, f32) {
 
 fn main() {
   board::init();
-  Board::print_spacing();
-  print!("\n\n");
   let mut n_games: u32 = 0;
 
   let mut avg_score = MovAvg::new();
@@ -188,10 +186,8 @@ fn main() {
     avg_score.drop();
 
     if (n_games % 2000) == 0 {
-      print!("\x1b[2A");
-      board.print(0);
-      println!("Avg score: {}  ", avg_score.avg());
-      println!("Num games: {}", n_games);
+      board.print(0, true,
+                  &format!("Avg score: {}  \nNum games: {}\n", avg_score.avg(), n_games));
     }
   }
 }
