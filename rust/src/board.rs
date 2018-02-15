@@ -42,12 +42,9 @@ impl Board {
       empty
     }
 
-    // Below can't handle this case.
-    debug_assert_ne!(self.0, 0);
-
     let b = !(self.0 | (self.0 >> 1) | (self.0 >> 2) | (self.0 >> 3)) & 0x1111_1111_1111_1111u64;
-    let n1 = b + (b >> 16) + (b >> 32) + (b >> 48);
-    let n2 = (n1 + (n1 >> 4) + (n1 >> 8) + (n1 >> 12)) & 0xf;
+    let n1 = (b + (b >> 4) + (b >> 8) + (b >> 12)) & 0x000f_000f_000f_000fu64;
+    let n2 = (n1 + (n1 >> 16) + (n1 >> 32) + (n1 >> 48)) & 0x1f;
     debug_assert!((n2 as i32) == empty_debug(self));
     n2 as i32
   }
@@ -90,9 +87,8 @@ impl Board {
   }
 
   pub fn comp_move(&mut self) -> i32 {
-    // self.empty() can't handle the completely-empty case.
-    debug_assert!(self.0 == 0 || self.empty() > 0);
-    let size = if self.0 == 0 { 16 } else { self.empty() };
+    debug_assert!(self.empty() > 0);
+    let size = self.empty();
     let mut n = rng(size);
     debug_assert!(self.0 == 0 || n < self.empty());
     let mut pos = -1;
@@ -286,6 +282,39 @@ mod tests {
       ans.remove(pos.unwrap());
     }
     assert!(ans.is_empty());
+  }
+
+  #[test]
+  fn basic() {
+    init();
+    assert_eq!(Board(0).empty(),
+               16);
+    assert_eq!(Board(0x1234_5678_9abc_def0).empty(),
+               1);
+    assert_eq!(Board(0xffff_ffff_ffff_ffff).empty(),
+               0);
+    assert_eq!(Board(0x1111_1111_1111_1111).empty(),
+               0);
+    assert_eq!(Board(0x1030_0608_90b0_0ef0).empty(),
+               8);
+    assert_eq!(Board(0x0001_0002_0003_0004).set_tile(2, 1),
+               Board(0x0001_0002_0003_0104));
+    assert_eq!(Board(0x0001_0002_0003_0004).set_tile(3, 2),
+               Board(0x0001_0002_0003_2004));
+    assert_eq!(Board(0x0001_0002_0003_0004).set_tile(14, 0xa),
+               Board(0x0a01_0002_0003_0004));
+    assert_eq!(Board(0x0123_4567_89ab_cdef).get_tile(15),
+               0x0);
+    assert_eq!(Board(0x0123_4567_89ab_cdef).get_tile(14),
+               0x1);
+    assert_eq!(Board(0x0123_4567_89ab_cdef).get_tile(13),
+               0x2);
+    assert_eq!(Board(0x0123_4567_89ab_cdef).get_tile(5),
+               0xa);
+    assert_eq!(Board(0x0123_4567_89ab_cdef).get_tile(4),
+               0xb);
+    assert_eq!(Board(0x0123_4567_89ab_cdef).get_tile(3),
+               0xc);
   }
 }
 
