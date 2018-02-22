@@ -58,13 +58,12 @@ def set_tile(board, tile, val):
 
 def empty(board):
   b = ~(board | (board >> 1) | (board >> 2) | (board >> 3)) & 0x1111_1111_1111_1111
-  n1 = b + (b >> 16) + (b >> 32) + (b >> 48)
-  n2 = (n1 + (n1 >> 4) + (n1 >> 8) + (n1 >> 12)) & 0xf
+  n1 = (b + (b >> 4) + (b >> 8) + (b >> 12)) & 0x000f_000f_000f_000f
+  n2 = (n1 + (n1 >> 16) + (n1 >> 32) + (n1 >> 48)) & 0x1f
   return n2
 
 def comp_move(board):
-  size = 16 if board == 0 else empty(board)
-  n = _rng(size)
+  n = _rng(empty(board))
   pos = -1
   while n >= 0:
     pos += 1
